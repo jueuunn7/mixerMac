@@ -1,0 +1,24 @@
+.build/
+dist/
+work/
+outputs/
+.DS_Store
+.codex/
+.swiftpm/
+*.xcuserstate
+
+# Compiled apps and release artifacts belong in GitHub Releases.
+*.app/
+*.driver/
+*.pkg
+*.dmg
+*.zip
+*.xcarchive/
+*.dSYM/
+*.o
+
+# Local credentials and environment overrides.
+.env
+.env.*
+!.env.example
+!.env.sample
