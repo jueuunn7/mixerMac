@@ -2,6 +2,8 @@
 
 # mixerMac
 
+[Website](https://jueuunn7.github.io/mixerMac/) · [Download](https://github.com/jueuunn7/mixerMac/releases/latest)
+
 A native macOS audio mixer with per-application EQ, a shared master bus, and a console-style interface.
 
 Adjust the sound of individual apps, fine-tune the combined output, and inspect the live spectrum without installing a separate audio driver. All audio processing happens locally; mixerMac does not record or upload your audio.

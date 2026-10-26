@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#151618">
+  <meta name="description" content="A native macOS audio mixer. Ten-band EQ for every app, a master bus, and real-time audio analysis. Free and open source.">
+  <meta property="og:title" content="mixerMac — Every app. In the mix.">
+  <meta property="og:description" content="Per-app EQ and a shared master bus. A familiar console for the sound on your Mac.">
+  <meta property="og:type" content="website">
+  <meta property="og:image" content="https://jueuunn7.github.io/mixerMac/assets/console.png">
+  <title>mixerMac — Every app. In the mix.</title>
+  <link rel="icon" type="image/png" href="assets/app-icon.png">
+  <link rel="stylesheet" href="styles.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="navigation wrap">
+    <a class="brand" href="#" aria-label="mixerMac home"><img src="assets/app-icon.png" width="40" height="40" alt=""><span>mixerMac</span></a>
+    <nav aria-label="Main navigation"><a href="#console">The console</a><a href="#detail">EQ Detail</a><a class="source-link" href="https://github.com/jueuunn7/mixerMac">GitHub <span aria-hidden="true">↗</span></a></nav>
+  </header>
+
+  <main id="main">
+    <section class="hero wrap" aria-labelledby="hero-title">
+      <div class="hero-copy">
+        <p class="eyebrow"><span class="led" aria-hidden="true"></span> NATIVE AUDIO CONTROL / macOS</p>
+        <h1 id="hero-title">Every app.<br><span>In the mix.</span></h1>
+        <p class="intro">A familiar console for the sound on your Mac. Give every app its own EQ, then bring it all together.</p>
+        <a class="button primary" href="https://github.com/jueuunn7/mixerMac/releases/latest/download/mixerMac-macOS.zip"><svg aria-hidden="true" viewBox="0 0 20 20"><path d="M10 2v10m-4-4 4 4 4-4M3 13v4h14v-4"/></svg> Download for Mac</a>
+        <p class="requirements">Apple Silicon · macOS 14.2+ <span>Free &amp; open source</span></p>
+        <div class="hero-specs" aria-label="At a glance"><div><b>10</b><span>BANDS / CHANNEL</span></div><div><b>±24<span>dB</span></b><span>EQ &amp; GAIN</span></div><div><b>100<span>%</span></b><span>LOCAL PROCESSING</span></div></div>
+      </div>
+      <figure class="product-preview">
+        <div class="panel-caption"><span><i aria-hidden="true"></i> APPLICATION MIXING CONSOLE</span><span>01 / MAIN</span></div>
+        <button class="screenshot-button" data-image="assets/console.png" data-caption="mixerMac — application channels and the master bus" aria-label="Enlarge the mixer console screenshot"><img class="console-image" src="assets/console.png" width="2000" height="2018" alt="The mixerMac console with four application channels, EQ knobs, pan, volume faders, and a master strip." fetchpriority="high"></button>
+        <figcaption><span>Real controls. Your actual audio.</span><span>Click to inspect <span aria-hidden="true">↗</span></span></figcaption>
+      </figure>
+    </section>
+
+    <section class="console-section" id="console" aria-labelledby="console-title">
+      <div class="wrap">
+        <div class="section-heading"><p class="eyebrow">01 / THE CONSOLE</p><h2 id="console-title">A channel for<br>every part of your day.</h2><p>Music, calls, a browser, a game. Shape each app independently, with controls that feel like they belong on a mixing desk.</p></div>
+        <div class="channels">
+          <article class="channel-feature"><span class="channel-number">1</span><p class="feature-label">APPLICATION CHANNELS</p><h3>Find your balance.</h3><p>Ten-band EQ, input gain, mute, solo, and pan for each app. Faders run from silence to unity.</p><div class="feature-bottom"><span class="tiny-led" aria-hidden="true"></span> INDEPENDENT CONTROL</div></article>
+          <article class="channel-feature"><span class="channel-number">2</span><p class="feature-label">MASTER BUS</p><h3>Bring it together.</h3><p>Adjust the combined sound with master EQ and gain. Set the stereo balance and width, from mono to wide.</p><div class="feature-bottom"><span class="tiny-led" aria-hidden="true"></span> ONE SHARED OUTPUT</div></article>
+          <article class="channel-feature"><span class="channel-number">3</span><p class="feature-label">EVERYDAY USE</p><h3>Pick up where you left off.</h3><p>Your settings save as you work. Turn POWER off to return to normal application playback.</p><div class="feature-bottom"><span class="tiny-led" aria-hidden="true"></span> SETTINGS REMEMBERED</div></article>
+        </div>
+      </div>
+    </section>
+
+    <section class="detail-section wrap" id="detail" aria-labelledby="detail-title">
+      <div class="detail-intro"><div><p class="eyebrow">02 / A CLOSER LISTEN</p><h2 id="detail-title">Dial it in.<br>See it clearly.</h2></div><div><p>The Detail view puts the EQ response next to the live spectrum. See what is happening, then make the smallest adjustment.</p><ul class="detail-list"><li>Drag a band, move a fader, or enter a value.</li><li>Edit frequency, gain, and bandwidth.</li><li>Watch the spectrum and 15-second level history.</li></ul></div></div>
+      <figure class="detail-preview"><div class="panel-caption"><span>EQ RESPONSE / LIVE SPECTRUM</span><span>02 / DETAIL</span></div><button class="screenshot-button" data-image="assets/detail.png" data-caption="mixerMac — master EQ Detail with live spectrum and band faders" aria-label="Enlarge the EQ Detail screenshot"><img src="assets/detail.png" width="1760" height="1726" alt="Master EQ Detail with a frequency response plot, measured spectrum, level history, and ten band faders." loading="lazy"></button><figcaption><span>Available for every app and the master.</span><span>Click to inspect <span aria-hidden="true">↗</span></span></figcaption></figure>
+    </section>
+
+    <section class="download-section wrap" id="download" aria-labelledby="download-title">
+      <div class="download-panel"><span class="screw top-left" aria-hidden="true"></span><span class="screw top-right" aria-hidden="true"></span><span class="screw bottom-left" aria-hidden="true"></span><span class="screw bottom-right" aria-hidden="true"></span><img src="assets/app-icon.png" width="100" height="100" alt="" loading="lazy"><p class="eyebrow">YOUR MAC. YOUR SOUND.</p><h2 id="download-title">Make room for your mix.</h2><p>No extra driver. No account. Just your apps, under control.</p><a class="button dark" href="https://github.com/jueuunn7/mixerMac/releases/latest/download/mixerMac-macOS.zip">Download mixerMac <span aria-hidden="true">↓</span></a><p class="download-note">Unzip → move to Applications → open.<br>Apple Silicon · macOS 14.2 or later.</p><a class="release-link" href="https://github.com/jueuunn7/mixerMac/releases">Release notes &amp; all downloads <span aria-hidden="true">↗</span></a></div>
+    </section>
+  </main>
+
+  <footer class="footer wrap"><a class="brand" href="#"><span>mixerMac</span></a><p>Made for macOS. Open source under MIT.</p><div><a href="https://github.com/jueuunn7/mixerMac">Source code <span aria-hidden="true">↗</span></a><a href="https://github.com/jueuunn7/mixerMac/issues">Report an issue <span aria-hidden="true">↗</span></a></div></footer>
+  <dialog id="image-dialog" aria-labelledby="image-caption"><div class="dialog-heading"><p id="image-caption"></p><button class="close-dialog" aria-label="Close screenshot">Close <span aria-hidden="true">×</span></button></div><img id="enlarged-image" alt=""></dialog>
+</body>
+</html>
