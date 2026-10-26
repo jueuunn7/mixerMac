@@ -15,7 +15,7 @@ Open `http://127.0.0.1:4173`. Edit `site/index.html`, `site/styles.css`, or `sit
 
 ## GitHub Pages
 
-The workflow publishes only `work/pages-site`, including three copied image assets. Application source, bundles, and test artifacts are not part of the Pages artifact.
+The workflow publishes only `work/pages-site`, including four copied image assets. Application source, bundles, and test artifacts are not part of the Pages artifact.
 
 To publish, enable GitHub Pages with **GitHub Actions** as the source in the repository's Pages settings. Push the website files and workflow to `main`, or run the workflow manually after they have been committed.
 

@@ -29,7 +29,7 @@ jobs:
         run: |
           mkdir -p work/pages-site/assets
           cp site/index.html site/styles.css site/app.js work/pages-site/
-          cp docs/assets/app-icon.png docs/assets/console.png docs/assets/detail.png work/pages-site/assets/
+          cp docs/assets/app-icon.png docs/assets/console.png docs/assets/detail.png docs/assets/social-preview.png work/pages-site/assets/
       - uses: actions/upload-pages-artifact@v3
         with:
           path: work/pages-site
