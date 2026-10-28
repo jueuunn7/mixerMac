@@ -1,3 +1,6 @@
+@testable import MixerAudio
+import MixerCore
+import MixerStandardNodes
 import Testing
 import Foundation
 @preconcurrency import AVFAudio
@@ -7,9 +10,9 @@ struct StereoWidthTests {
     private func rendered(width: Float, left: Float = 0.25, right: Float = -0.5,
                           appPan: Float = 0, masterPan: Float = 0) throws -> (Float, Float) {
         let format = try #require(AVAudioFormat(standardFormatWithSampleRate: 48_000, channels: 2))
-        let input = try #require(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 4096))
-        input.frameLength = 4096
-        for sample in 0..<4096 {
+        let input = try #require(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 1024))
+        input.frameLength = 1024
+        for sample in 0..<1024 {
             input.floatChannelData![0][sample] = left
             input.floatChannelData![1][sample] = right
         }
@@ -17,6 +20,8 @@ struct StereoWidthTests {
         bridge.setPan(appPan)
         bridge.setMasterWidth(width)
         bridge.setMasterPan(masterPan)
+        // Prime two capture callbacks, including the interpolation lookahead.
+        bridge.ingest(input.audioBufferList)
         bridge.ingest(input.audioBufferList)
         let output = try #require(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 1024))
         output.frameLength = 1024
@@ -62,5 +67,31 @@ struct StereoWidthTests {
         #expect(restored.masterEQ.gains[3] == -2.4)
         let old = Data(#"{"gains":[0,0,0,0,0,0,0,0,0,0],"enabled":true}"#.utf8)
         #expect(try JSONDecoder().decode(BusEQSettings.self, from: old).width == 1)
+    }
+}
+
+extension StereoWidthTests {
+    @Test @MainActor func channelWidthPersistsThroughLegacySettingsAndNodeSnapshots() throws {
+        let old = Data(#"{"gains":[0,0,0,0,0,0,0,0,0,0],"volume":1,"eqEnabled":true}"#.utf8)
+        #expect(try JSONDecoder().decode(ChannelSettings.self, from: old).width == 1)
+        let suite = "mixerMac.ChannelWidth.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let app = AudioApp(id: "width.app", name: "Width", icon: nil, processes: [], isPlaying: false)
+        let channel = AppAudioChannel(app: app, defaults: defaults)
+        channel.core.width.setValue(1.35)
+        channel.settings.gains[3] = 2
+        let restored = AppAudioChannel(app: app, defaults: defaults)
+        #expect(restored.restorationError == nil)
+        #expect(restored.core.width.value == 1.35)
+        #expect(restored.settings.gains[3] == 2)
+        let data = try #require(defaults.data(forKey: "channel.\(app.id)"))
+        #expect(try JSONDecoder().decode(ChannelSettings.self, from: data).width == 1.35)
+        var master = BusEQSettings()
+        master.width = 1.6
+        master.detailSettings.gains[0] = 3
+        #expect(master.width == 1.6)
+        master.detailSettings.width = 0.5
+        #expect(master.width == 0.5)
     }
 }

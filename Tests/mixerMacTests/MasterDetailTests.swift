@@ -1,3 +1,6 @@
+@testable import MixerAudio
+import MixerCore
+import MixerStandardNodes
 import Testing
 import Foundation
 import SwiftUI
@@ -5,6 +8,25 @@ import SwiftUI
 @testable import mixerMac
 
 struct MasterDetailTests {
+    @Test @MainActor func consoleMasterResetRestoresAllToneControlsAndPersists() throws {
+        let domain = "mixerMac.MasterReset.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: domain))
+        defer { defaults.removePersistentDomain(forName: domain) }
+        let model = MixerConsoleModel(preferences: ConsolePreferences(defaults: defaults))
+        var edited = BusEQSettings()
+        edited.pan = -0.6
+        edited.width = 0.2
+        edited.gainDB = 8
+        edited.gains[5] = 10
+        edited.bandFrequencies[5] = 1234
+        edited.bandwidths[5] = 0.3
+        model.masterEQ = edited
+        model.core.master.resetTone()
+        #expect(model.masterEQ == BusEQSettings())
+        let restored = MixerConsoleModel(preferences: ConsolePreferences(defaults: defaults))
+        #expect(restored.masterEQ == BusEQSettings())
+    }
+
     @Test func eqFaderHasCenterZeroAndFullBipolarRange() {
         #expect(EQFaderScale.position(for: 0) == 0.5)
         #expect(EQFaderScale.position(for: 24) == 1)
@@ -25,7 +47,7 @@ struct MasterDetailTests {
         let defaults = try #require(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         let model = MixerConsoleModel(preferences: ConsolePreferences(defaults: defaults))
-        let binding = Binding<AppChannelSettings>(get: { model.masterEQ.detailSettings }, set: { model.masterEQ.detailSettings = $0 })
+        let binding = Binding<ChannelSettings>(get: { model.masterEQ.detailSettings }, set: { model.masterEQ.detailSettings = $0 })
         setDetailGain(3.7, band: 5, settings: binding)
         binding.wrappedValue.frequencies[5] = 1234.5
         binding.wrappedValue.bandwidths[5] = 0.35
@@ -38,13 +60,10 @@ struct MasterDetailTests {
         #expect(restored.masterEQ.detailSettings.pan == 0.45)
         #expect(restored.masterEQ.detailSettings.trimDB == 0)
         #expect(restored.masterEQ.detailSettings.volume == 1)
-        let processor = AppChannelProcessor()
-        processor.apply(AppChannelSettings(), audible: true, master: 1, sampleRate: 48_000, masterEQ: restored.masterEQ)
-        #expect(processor.masterEQ.bands[5].gain == 3.7)
-        #expect(processor.masterEQ.bands[5].frequency == 1234.5)
-        #expect(processor.masterEQ.bands[5].bandwidth == 0.35)
-        #expect(processor.masterEQ.globalGain == 0)
-        #expect(processor.eq.bands[5].gain == 0)
+        var neutralPan = restored.masterEQ
+        neutralPan.pan = 0
+        let peak = try renderedConsolePeak(master: neutralPan, frequency: 1234.5, frames: 48000, amplitude: 0.01)
+        #expect(abs(20 * log10(peak / 0.01) - 3.7) < 0.05)
         let response = try ChannelEQResponse().decibels(settings: restored.masterEQ.detailSettings,
             frequencies: [1234.5], sampleRate: 48_000)
         #expect(abs(response[0] - 3.7) < 0.001)
@@ -52,7 +71,7 @@ struct MasterDetailTests {
 
     @Test @MainActor func faderEditsNeverAddHiddenMasterAttenuation() throws {
         var master = BusEQSettings()
-        let binding = Binding<AppChannelSettings>(get: { master.detailSettings }, set: { master.detailSettings = $0 })
+        let binding = Binding<ChannelSettings>(get: { master.detailSettings }, set: { master.detailSettings = $0 })
         setDetailGain(-24, band: 0, settings: binding)
         setDetailGain(24, band: 9, settings: binding)
         let eq = AVAudioUnitEQ(numberOfBands: 10)

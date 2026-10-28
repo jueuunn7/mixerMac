@@ -1,10 +1,6 @@
+import MixerCore
+import MixerStandardNodes
 import SwiftUI
-
-enum StereoWidth {
-    static func clamped(_ value: Float) -> Float { value.isFinite ? min(2, max(0, value)) : 1 }
-    static func quantized(_ value: Float) -> Float { (clamped(value) * 100).rounded() / 100 }
-    static func label(_ value: Float) -> String { "\(Int((clamped(value) * 100).rounded()))%" }
-}
 
 struct ConsoleWidthControl: View {
     @Binding var value: Float

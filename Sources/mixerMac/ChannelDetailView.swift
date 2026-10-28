@@ -1,15 +1,17 @@
+import MixerAudio
+import MixerCore
+import MixerStandardNodes
 import SwiftUI
 
 private typealias DetailState<Value> = SwiftUI.State<Value>
 
 struct ChannelDetailView: View {
     @ObservedObject var channel: AppAudioChannel
-    let mixer: MixerConsoleModel
     var body: some View {
         EQDetailView(title: channel.app.name, settings: $channel.settings,
             isMaster: false, isProcessing: channel.isProcessing,
             feed: channel.isProcessing ? channel.postEQ : channel.input,
-            apply: { mixer.apply() })
+            width: channel.core.width.binding)
     }
 }
 
@@ -20,22 +22,23 @@ struct MasterDetailView: View {
             get: { mixer.masterEQ.detailSettings },
             set: { mixer.masterEQ.detailSettings = $0 }),
             isMaster: true, isProcessing: mixer.isMixing, feed: mixer.masterFeed,
-            apply: { mixer.apply() }, width: $mixer.masterEQ.width)
+            width: mixer.core.master.width.binding)
     }
 }
 
 private struct EQDetailView: View {
     let title: String
-    @Binding var settings: AppChannelSettings
+    @Binding var settings: ChannelSettings
     let isMaster: Bool
     let isProcessing: Bool
     let feed: PCMFeed
-    let apply: () -> Void
     var width: Binding<Float>? = nil
     @Environment(\.dismiss) private var dismiss
     @StateObject private var detail = ChannelDetailModel()
     @DetailState private var selectedBand = 0
     @DetailState private var showingFaders = true
+    // Keep the same publisher while graph drags rebuild the view at pointer rate.
+    @DetailState private var analysisTimer = Timer.publish(every: 0.15, on: .main, in: .common).autoconnect()
 
     var body: some View {
         VStack(spacing: 14) {
@@ -55,12 +58,12 @@ private struct EQDetailView: View {
                 Text("EQ RESPONSE").font(.system(size: 11, weight: .bold)).tracking(1)
                 Text("Drag bands · cyan EQ / green smoothed audio").font(.system(size: 10)).foregroundStyle(.secondary)
                 Spacer()
-                if isMaster, let width { DetailWidthControl(value: width) }
+                if let width { DetailWidthControl(value: width) }
                 DetailPanControl(value: $settings.pan)
-                Text("GAIN").font(.system(size: 10, weight: .bold))
+                Text("TRIM").font(.system(size: 10, weight: .bold))
                 DetailNumberField(value: Binding(get: { Double(settings.trimDB) }, set: {
                     guard $0.isFinite else { return }; settings.trimDB = Float(min(24, max(-24, $0)))
-                }), label: isMaster ? "Master gain" : "Channel trim", digits: 1).frame(width: 65)
+                }), label: isMaster ? "Master trim" : "Channel trim", digits: 1).frame(width: 65)
                 Text("dB").font(.system(size: 10)).foregroundStyle(.secondary)
             }
             DetailResponsePlot(settings: $settings, detail: detail, selectedBand: $selectedBand)
@@ -79,7 +82,7 @@ private struct EQDetailView: View {
                 }.pickerStyle(.segmented).labelsHidden().frame(width: 160)
                 Button("Reset EQ") {
                     settings.gains = Array(repeating: 0, count: 10)
-                    settings.frequencies = AppAudioChannel.frequencies
+                    settings.frequencies = EQSettings.frequencies
                     settings.bandwidths = Array(repeating: 1, count: 10)
                 }.controlSize(.small)
             }
@@ -102,9 +105,8 @@ private struct EQDetailView: View {
         .background(LinearGradient(colors: [Color(white: 0.84), Color(white: 0.73)], startPoint: .topLeading, endPoint: .bottomTrailing))
         .foregroundStyle(Color(white: 0.13)).preferredColorScheme(.light)
         .onAppear { detail.tick(settings: settings, feed: feed, isProcessing: isProcessing) }
-        .onReceive(Timer.publish(every: 0.15, on: .main, in: .common).autoconnect()) { _ in detail.tick(settings: settings, feed: feed, isProcessing: isProcessing) }
+        .onReceive(analysisTimer) { _ in detail.tick(settings: settings, feed: feed, isProcessing: isProcessing) }
         .onChange(of: settings) { _, _ in
-            apply()
             detail.refreshResponse(settings: settings)
         }
     }
@@ -115,7 +117,7 @@ private struct EQDetailView: View {
 }
 
 private struct DetailBandTable: View {
-    @Binding var settings: AppChannelSettings
+    @Binding var settings: ChannelSettings
     @Binding var selectedBand: Int
     let upperFrequency: Double
 
@@ -190,7 +192,7 @@ struct DetailNumberField: View {
 }
 
 private struct DetailResponsePlot: View {
-    @Binding var settings: AppChannelSettings
+    @Binding var settings: ChannelSettings
     @ObservedObject var detail: ChannelDetailModel
     @Binding var selectedBand: Int
     @DetailState private var dragStart: (frequency: Float, gain: Float)?
@@ -249,9 +251,10 @@ private struct DetailResponsePlot: View {
                             selectedBand = band
                             if dragStart == nil { dragStart = (settings.frequencies[band], settings.gains[band]) }
                             guard let start = dragStart else { return }
-                            settings.frequencies[band] = Float(min(detail.upperFrequency, max(20,
+                            let frequency = Float(min(detail.upperFrequency, max(20,
                                 Double(start.frequency) * pow(detail.upperFrequency / 20, event.translation.width / rect.width))))
-                            setDetailGain(start.gain - Float(event.translation.height / rect.height * extent * 2), band: band, settings: $settings)
+                            let gain = start.gain - Float(event.translation.height / rect.height * extent * 2)
+                            setDetailBand(band, frequency: frequency, gain: gain, settings: $settings)
                         }.onEnded { _ in dragStart = nil })
                         .onTapGesture { selectedBand = band }
                         .accessibilityLabel("Select EQ band \(band + 1)")
@@ -281,25 +284,39 @@ private struct DetailResponsePlot: View {
 private struct DetailSignalPlot: View {
     @ObservedObject var detail: ChannelDetailModel
     let history: Bool
+    private var recentPeak: Double { detail.history.max() ?? -90 }
+    private var ceiling: Double { history ? max(24, ceil(max(0, recentPeak) / 12) * 12) : 0 }
+
+    private func formattedPeak(_ value: Double) -> String {
+        value <= -90 ? "−∞" : String(format: "%+.1f", value)
+    }
     var body: some View {
         VStack(spacing: 4) {
             HStack {
                 Text(history ? "SIGNAL LEVEL · 15 s" : "LIVE SPECTRUM · SMOOTH").font(.system(size: 10, weight: .bold)).tracking(0.5)
                 Spacer()
-                Text(history ? (detail.peakDB <= -90 ? "−∞ dBFS" : String(format: "%+.1f dBFS", detail.peakDB)) : (detail.receivingAudio ? "LIVE" : "NO SIGNAL"))
-                    .font(.system(size: 9, design: .monospaced)).foregroundStyle(.secondary)
+                Text(history ? "\(formattedPeak(detail.peakDB)) · MAX \(formattedPeak(recentPeak)) dBFS" : (detail.receivingAudio ? "LIVE" : "NO SIGNAL"))
+                    .font(.system(size: 9, design: .monospaced))
+                    .foregroundStyle(history && recentPeak > 0 ? Color.red : Color.secondary)
             }
             GeometryReader { proxy in
                 let rect = CGRect(x: 35, y: 10, width: proxy.size.width - 47, height: proxy.size.height - 30)
                 let values = history ? detail.history : detail.spectrum.map(Double.init)
                 ZStack {
-                DetailAnimatedTrace(levels: values, plot: rect, history: history)
+                DetailAnimatedTrace(levels: values, plot: rect, history: history, ceiling: ceiling)
                 Canvas { context, _ in
-                for db in [0.0, -30, -60, -90] {
-                    let y = rect.minY - rect.height * db / 90
+                if history {
+                    let zeroY = DetailAudioTrace.yPosition(0, plot: rect, ceiling: ceiling)
+                    context.fill(Path(CGRect(x: rect.minX, y: rect.minY, width: rect.width, height: zeroY - rect.minY)),
+                        with: .color(.red.opacity(0.08)))
+                }
+                let marksDB: [Double] = history ? [ceiling, ceiling / 2, 0, -30, -60, -90] : [0, -30, -60, -90]
+                for db in marksDB {
+                    let y = DetailAudioTrace.yPosition(db, plot: rect, ceiling: ceiling)
                     var line = Path(); line.move(to: CGPoint(x: rect.minX, y: y)); line.addLine(to: CGPoint(x: rect.maxX, y: y))
-                    context.stroke(line, with: .color(.white.opacity(0.1)), lineWidth: 0.6)
-                    context.draw(Text(String(format: "%.0f", db)).font(.system(size: 8, design: .monospaced)).foregroundStyle(.gray), at: CGPoint(x: 16, y: y))
+                    context.stroke(line, with: .color(history && db == 0 ? .orange.opacity(0.8) : .white.opacity(0.1)), lineWidth: history && db == 0 ? 1 : 0.6)
+                    context.draw(Text(String(format: db > 0 ? "+%.0f" : "%.0f", db))
+                        .font(.system(size: 8, design: .monospaced)).foregroundStyle(history && db >= 0 ? Color.orange : Color.gray), at: CGPoint(x: 16, y: y))
                 }
                 let marks: [(String, Double)] = history ? [("−15 s", 0), ("−7.5 s", 0.5), ("NOW", 1)] : [("20 Hz", 0), ("1k", log(1000 / 20) / log(detail.upperFrequency / 20)), (String(format: "%.0fk", detail.upperFrequency / 1000), 1)]
                 for (label, position) in marks {

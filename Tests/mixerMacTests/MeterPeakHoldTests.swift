@@ -1,3 +1,6 @@
+@testable import MixerAudio
+import MixerCore
+import MixerStandardNodes
 import Testing
 @testable import mixerMac
 

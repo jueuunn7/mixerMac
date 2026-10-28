@@ -7,13 +7,14 @@
 #include <time.h>
 
 #define CAPACITY 65536u
-#define TARGET 4096u
+#define TARGET 512u
 #define SINC_TAPS 64u
 #define SINC_PHASES 1024u
-#define CLOCK_DEADBAND 512.0
+#define CLOCK_DEADBAND 128.0
 struct mixerMacFIFO {
     float left[CAPACITY], right[CAPACITY];
     atomic_ullong read, write;
+    atomic_uint inputQuantum;
     double fraction; // only touched by the single output render callback
     bool primed;
     _Atomic(float) targetPan;
@@ -28,6 +29,7 @@ struct mixerMacFIFO {
 mixerMacFIFO *mixerMacFIFOCreate(void) {
     mixerMacFIFO *fifo = calloc(1, sizeof(mixerMacFIFO));
     if (!fifo) return NULL;
+    atomic_init(&fifo->inputQuantum, 0);
     atomic_init(&fifo->targetPan, 0);
     atomic_init(&fifo->targetMasterPan, 0);
     atomic_init(&fifo->targetMasterWidth, 1);
@@ -81,6 +83,9 @@ void mixerMacFIFOWrite(mixerMacFIFO *fifo, const AudioBufferList *buffers) {
     // reserve also prevents the producer overwriting history at a ring wrap.
     uint64_t freeFrames = (CAPACITY - SINC_TAPS) - (write - read);
     if (frames > freeFrames) frames = (uint32_t)freeFrames;
+    // Record the input callback size so ordinary callback batching does not
+    // look like clock drift when the input and output use different quanta.
+    if (frames) atomic_store_explicit(&fifo->inputQuantum, frames, memory_order_relaxed);
     for (uint32_t i = 0; i < frames; ++i) {
         fifo->left[(write + i) % CAPACITY] = left[i * strideL];
         fifo->right[(write + i) % CAPACITY] = right[i * strideR + offsetR];
@@ -93,12 +98,18 @@ void mixerMacFIFORender(mixerMacFIFO *fifo, uint32_t frames, AudioBufferList *bu
     uint64_t read = atomic_load_explicit(&fifo->read, memory_order_relaxed);
     const uint64_t write = atomic_load_explicit(&fifo->write, memory_order_acquire);
     uint64_t available = write - read;
-    if (!fifo->primed && available >= TARGET) fifo->primed = true;
+    const uint32_t inputQuantum = atomic_load_explicit(&fifo->inputQuantum, memory_order_relaxed);
+    const double quantum = fmax((double)inputQuantum, (double)frames);
+    // Reserve one callback plus the sinc's right wing. Large device callbacks
+    // need more than the 512-frame minimum to render without periodic gaps.
+    const double target = fmax(TARGET, quantum + SINC_TAPS / 2 + 1);
+    const double deadband = fmax(CLOCK_DEADBAND, quantum);
+    if (!fifo->primed && available >= target) fifo->primed = true;
     // Ignore ordinary callback batching rather than continually resampling
     // equal-rate audio. Actual sustained clock drift is corrected slowly.
-    double error = (double)available - TARGET;
-    double correction = fabs(error) <= CLOCK_DEADBAND ? 0 : error - copysign(CLOCK_DEADBAND, error);
-    double step = 1 + fmax(-0.001, fmin(0.001, correction / (TARGET * 2000.0)));
+    double error = (double)available - target;
+    double correction = fabs(error) <= deadband ? 0 : error - copysign(deadband, error);
+    double step = 1 + fmax(-0.001, fmin(0.001, correction / (target * 2000.0)));
     float targetPan = atomic_load_explicit(&fifo->targetPan, memory_order_relaxed);
     float targetMasterPan = atomic_load_explicit(&fifo->targetMasterPan, memory_order_relaxed);
     float targetMasterWidth = atomic_load_explicit(&fifo->targetMasterWidth, memory_order_relaxed);
@@ -259,4 +270,47 @@ void mixerMacAnalysisReset(mixerMacAnalysis *analysis) {
     analysis->lastWrite = 0;
     analysis->sequence++;
     atomic_flag_clear_explicit(&analysis->busy, memory_order_release);
+}
+
+struct mixerMacStereo {
+    atomic_bool bypassed;
+    _Atomic(float) pan, width;
+    float renderedPan, renderedWidth;
+};
+
+mixerMacStereo *mixerMacStereoCreate(void) {
+    mixerMacStereo *state = calloc(1, sizeof(mixerMacStereo));
+    if (!state) return NULL;
+    atomic_init(&state->bypassed, false);
+    atomic_init(&state->pan, 0);
+    atomic_init(&state->width, 1);
+    state->renderedWidth = 1;
+    return state;
+}
+void mixerMacStereoDestroy(mixerMacStereo *state) { free(state); }
+void mixerMacStereoSetBypassed(mixerMacStereo *state, int bypassed) {
+    atomic_store_explicit(&state->bypassed, bypassed != 0, memory_order_relaxed);
+}
+void mixerMacStereoSet(mixerMacStereo *state, float pan, float width) {
+    atomic_store_explicit(&state->pan, isfinite(pan) ? fmaxf(-1, fminf(1, pan)) : 0, memory_order_relaxed);
+    atomic_store_explicit(&state->width, isfinite(width) ? fmaxf(0, fminf(2, width)) : 1, memory_order_relaxed);
+}
+void mixerMacStereoProcess(mixerMacStereo *state, uint32_t frames, AudioBufferList *buffers) {
+    if (atomic_load_explicit(&state->bypassed, memory_order_relaxed) || buffers->mNumberBuffers != 2) return;
+    AudioBuffer *leftBuffer = &buffers->mBuffers[0], *rightBuffer = &buffers->mBuffers[1];
+    if (!leftBuffer->mData || !rightBuffer->mData || leftBuffer->mNumberChannels != 1 || rightBuffer->mNumberChannels != 1) return;
+    uint32_t available = leftBuffer->mDataByteSize / sizeof(float);
+    if (rightBuffer->mDataByteSize / sizeof(float) < available) available = rightBuffer->mDataByteSize / sizeof(float);
+    if (frames > available) frames = available;
+    float *left = leftBuffer->mData, *right = rightBuffer->mData;
+    const float pan = atomic_load_explicit(&state->pan, memory_order_relaxed);
+    const float width = atomic_load_explicit(&state->width, memory_order_relaxed);
+    for (uint32_t i = 0; i < frames; ++i) {
+        state->renderedPan += fmaxf(-1.0f / 240, fminf(1.0f / 240, pan - state->renderedPan));
+        state->renderedWidth += fmaxf(-1.0f / 240, fminf(1.0f / 240, width - state->renderedWidth));
+        float mid = (left[i] + right[i]) * 0.5f;
+        float side = (left[i] - right[i]) * (0.5f * state->renderedWidth);
+        left[i] = (mid + side) * fminf(1, 1 - state->renderedPan);
+        right[i] = (mid - side) * fminf(1, 1 + state->renderedPan);
+    }
 }

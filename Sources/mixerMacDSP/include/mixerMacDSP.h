@@ -21,4 +21,10 @@ int mixerMacAnalysisRead(mixerMacAnalysis *analysis, float *left, float *right,
 int mixerMacAnalysisPeek(mixerMacAnalysis *analysis, float *left, float *right,
                        double *rate, float *peak, float *leftPeak, float *rightPeak, uint64_t *sequence);
 void mixerMacAnalysisReset(mixerMacAnalysis *analysis);
+typedef struct mixerMacStereo mixerMacStereo;
+mixerMacStereo *mixerMacStereoCreate(void);
+void mixerMacStereoDestroy(mixerMacStereo *state);
+void mixerMacStereoSetBypassed(mixerMacStereo *state, int bypassed);
+void mixerMacStereoSet(mixerMacStereo *state, float pan, float width);
+void mixerMacStereoProcess(mixerMacStereo *state, uint32_t frames, AudioBufferList *buffers);
 #endif

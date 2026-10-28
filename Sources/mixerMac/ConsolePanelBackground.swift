@@ -3,7 +3,6 @@ import SwiftUI
 /// Printed channel divisions on a shared, flat silver console surface.
 struct ConsoleChannelPlate: View {
     var channelNumber: Int? = nil
-    var master = false
     var fillsSurface = true
 
     var body: some View {
@@ -21,30 +20,9 @@ struct ConsoleChannelPlate: View {
                 CGPoint(x: x * scaleX, y: y)
             }
 
-            func rail(_ vertices: [CGPoint]) -> Path {
-                Path { path in
-                    guard let first = vertices.first else { return }
-                    path.move(to: first)
-                    for vertex in vertices.dropFirst() {
-                        path.addLine(to: vertex)
-                    }
-                }
-            }
-
-            let segments: [[CGPoint]] = [
-                [point(0, master ? ConsoleLayout.stripTopInset : 25),
-                 point(0, master ? 105 : 103)],
-                [point(0, master ? ConsoleLayout.masterEQTop : ConsoleLayout.appEQTop),
-                 point(0, (master ? ConsoleLayout.masterEQTop : ConsoleLayout.appEQTop) + ConsoleLayout.eqBankHeight)],
-                [point(0, master ? ConsoleLayout.masterControlsTop : ConsoleLayout.appControlsTop),
-                 point(0, master ? ConsoleLayout.masterControlsBottom : ConsoleLayout.appControlsTop + ConsoleLayout.channelControlsHeight)],
-                [point(0, master ? ConsoleLayout.masterMeterTop : ConsoleLayout.appFaderTop),
-                 point(0, master ? ConsoleLayout.masterMeterBottom : ConsoleLayout.appFaderTop + ConsoleLayout.appFaderHeight)]
-            ]
-
-            var printing = Path()
-            for segment in segments {
-                printing.addPath(rail(segment))
+            let printing = Path { path in
+                path.move(to: point(0, 0))
+                path.addLine(to: point(0, size.height))
             }
             context.stroke(
                 printing,

@@ -1,3 +1,6 @@
+@testable import MixerAudio
+import MixerCore
+import MixerStandardNodes
 import Foundation
 import Testing
 @testable import mixerMac
@@ -70,7 +73,7 @@ struct ConsolePersistenceTests {
             "eqEnabled": true
         ]
         let data = try JSONSerialization.data(withJSONObject: legacy)
-        let restored = try JSONDecoder().decode(AppChannelSettings.self, from: data)
+        let restored = try JSONDecoder().decode(ChannelSettings.self, from: data)
         #expect(!restored.isMuted)
         #expect(!restored.isSolo)
         #expect(restored.trimDB == 0)
@@ -78,7 +81,7 @@ struct ConsolePersistenceTests {
         #expect(restored.gains == [Float](repeating: -2, count: 10))
         legacy["isMuted"] = true
         let mutedData = try JSONSerialization.data(withJSONObject: legacy)
-        let muted = try JSONDecoder().decode(AppChannelSettings.self, from: mutedData)
+        let muted = try JSONDecoder().decode(ChannelSettings.self, from: mutedData)
         #expect(muted.isMuted)
         #expect(!muted.isSolo)
     }
@@ -89,7 +92,7 @@ struct ConsolePersistenceTests {
             let model = MixerConsoleModel(preferences: preferences)
             model.masterEQ.gains[2] = -4
             model.masterEQ.gains[BusEQSettings.frequencies.count - 1] = 3
-            model.outputs = [OutputDevice(id: 42, name: "Test", uid: "persistent-output")]
+            model.restoreOutputSelection(devices: [OutputDevice(id: 42, name: "Test", uid: "persistent-output")], defaultOutputID: 42)
             model.selectOutput(42)
             let reopened = MixerConsoleModel(preferences: ConsolePreferences(defaults: defaults))
             #expect(reopened.masterEQ == model.masterEQ)
@@ -110,16 +113,17 @@ struct ConsolePersistenceTests {
     @Test @MainActor func legacyMasterAttenuationIsIgnored() throws {
         try withDefaults { defaults in
             defaults.set(0.12, forKey: "master.volume")
-            let model = MixerConsoleModel(preferences: ConsolePreferences(defaults: defaults))
+            let model = MixerConsoleModel(preferences: ConsolePreferences(defaults: defaults),
+                makeCapture: { _, _ in TestAudioCapture() })
+            defer { model.shutdown() }
             let app = AudioApp(id: "test.unity", name: "Test", icon: nil, processes: [], isPlaying: false)
-            let channel = AppAudioChannel(app: app, defaults: defaults)
-            model.channels = [channel]
-            model.apply()
-            #expect(abs(channel.processor.levelControl.globalGain) < 0.0001)
+            model.refresh(apps: [app], devices: [], defaultOutputID: 0)
+            let channel = try #require(model.channels.first)
+            let measuredPeak1 = try renderedConsolePeak(settings: channel.settings, master: model.masterEQ)
+            #expect(abs(measuredPeak1 - 0.1) < 0.001)
             channel.settings.volume = 0.5
-            model.apply()
-            #expect(abs(channel.processor.levelControl.globalGain - 20 * log10(Float(0.5))) < 0.0001)
-            #expect(channel.processor.masterEQ.bands.count == BusEQSettings.frequencies.count)
+            let measuredPeak2 = try renderedConsolePeak(settings: channel.settings, master: model.masterEQ)
+            #expect(abs(measuredPeak2 - 0.05) < 0.001)
         }
     }
 
@@ -127,8 +131,13 @@ struct ConsolePersistenceTests {
         try withDefaults { defaults in
             let preferences = ConsolePreferences(defaults: defaults)
             preferences.saveMixerRunning(true)
-            let model = MixerConsoleModel(preferences: preferences)
-            model.isMixing = true // Simulate an active session without opening hardware.
+            let processing = TestChannelProcessing()
+            let model = MixerConsoleModel(preferences: preferences,
+                sources: try processing.registry(), audioOutput: processing.output,
+                discoverOwnProcesses: { [99] }, makeCapture: { _, _ in TestAudioCapture() })
+            let app = AudioApp(id: "shutdown.test", name: "Test", icon: nil, processes: [11], isPlaying: false)
+            model.refresh(apps: [app], devices: [OutputDevice(id: 42, name: "Test", uid: "test-output")], defaultOutputID: 42)
+            #expect(model.isMixing)
             model.shutdown()
             #expect(!model.isMixing)
             #expect(preferences.mixerWasRunning)
@@ -146,7 +155,7 @@ struct ConsolePersistenceTests {
             defaults.set("existing-output", forKey: "output.uid")
             defaults.set(0.3, forKey: "master.volume")
             defaults.set(try JSONEncoder().encode(BusEQSettings()), forKey: "master.eq")
-            var savedChannel = AppChannelSettings()
+            var savedChannel = ChannelSettings()
             savedChannel.isMuted = true
             savedChannel.isSolo = true
             defaults.set(try JSONEncoder().encode(savedChannel), forKey: "channel.existing.app")

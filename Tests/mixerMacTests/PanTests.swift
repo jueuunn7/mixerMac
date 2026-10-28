@@ -1,3 +1,6 @@
+@testable import MixerAudio
+import MixerCore
+import MixerStandardNodes
 import Testing
 import Foundation
 @preconcurrency import AVFAudio
@@ -7,13 +10,15 @@ struct PanTests {
     @Test(arguments: [Float(-1), 0, 1])
     func masterBalanceCombinesWithAppBalanceInsteadOfReplacingIt(master: Float) throws {
         let format = try #require(AVAudioFormat(standardFormatWithSampleRate: 48_000, channels: 2))
-        let input = try #require(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 4096))
-        input.frameLength = 4096
-        for sample in 0..<4096 {
+        let input = try #require(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 1024))
+        input.frameLength = 1024
+        for sample in 0..<1024 {
             input.floatChannelData![0][sample] = 0.25
             input.floatChannelData![1][sample] = -0.5
         }
         let bridge = try DriverAudioBridge(inputFeed: PCMFeed(), rate: 48_000)
+        // Prime two capture callbacks, including the interpolation lookahead.
+        bridge.ingest(input.audioBufferList)
         bridge.ingest(input.audioBufferList)
         bridge.setPan(-0.5)
         bridge.setMasterPan(master)
@@ -27,13 +32,14 @@ struct PanTests {
     @Test(arguments: [Float(-1), -0.5, 0, 0.5, 1], [44_100.0, 48_000.0])
     func actualBridgeBalancesStereoAndKeepsCentreUnity(pan: Float, rate: Double) throws {
         let format = try #require(AVAudioFormat(standardFormatWithSampleRate: rate, channels: 2))
-        let input = try #require(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 4096))
-        input.frameLength = 4096
-        for sample in 0..<4096 {
+        let input = try #require(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 1024))
+        input.frameLength = 1024
+        for sample in 0..<1024 {
             input.floatChannelData![0][sample] = 0.25
             input.floatChannelData![1][sample] = -0.5
         }
         let bridge = try DriverAudioBridge(inputFeed: PCMFeed(), rate: rate)
+        bridge.ingest(input.audioBufferList)
         bridge.ingest(input.audioBufferList)
         bridge.setPan(pan)
         let output = try #require(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 1024))
@@ -65,6 +71,6 @@ struct PanTests {
         #expect(restored.settings.pan == -0.65)
         #expect(restored.settings.volume == 1)
         let legacy = Data(#"{"gains":[0,0,0,0,0,0,0,0,0,0],"volume":1,"eqEnabled":true}"#.utf8)
-        #expect(try JSONDecoder().decode(AppChannelSettings.self, from: legacy).pan == 0)
+        #expect(try JSONDecoder().decode(ChannelSettings.self, from: legacy).pan == 0)
     }
 }

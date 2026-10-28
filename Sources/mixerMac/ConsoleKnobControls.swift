@@ -144,15 +144,14 @@ struct ConsolePrintedKnob: View {
     var body: some View {
         GeometryReader { geometry in
             let center = CGPoint(x: geometry.size.width / 2,
-                                 y: geometry.size.height / 2 - (trim ? 3 : 2.5))
+                                 y: geometry.size.height / 2 - 2.5)
             ZStack(alignment: .topLeading) {
                 Canvas { context, _ in
                     let ink = Color(white: 0.12)
-                    let title = Text(label).font(.system(size: trim ? 9 : 8, weight: .bold))
+                    let title = Text(label).font(.system(size: 8, weight: .bold))
                         .foregroundStyle(ink)
                     context.draw(title,
-                                 at: CGPoint(x: trim ? center.x + 27 : 12,
-                                             y: center.y - (trim ? 10 : 7.5)),
+                                 at: CGPoint(x: 12, y: center.y - 7.5),
                                  anchor: .leading)
                     let low = Text("−24").font(.system(size: 7, weight: .medium)).foregroundStyle(ink)
                     let high = Text("+24").font(.system(size: 7, weight: .medium)).foregroundStyle(ink)
@@ -164,7 +163,7 @@ struct ConsolePrintedKnob: View {
                     .position(center)
             }
         }
-        .frame(height: trim ? 53 : 42)
+        .frame(height: ConsoleLayout.eqRowHeight)
         .foregroundStyle(Color(white: 0.12))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(label.replacingOccurrences(of: "\n", with: " ") + " gain")

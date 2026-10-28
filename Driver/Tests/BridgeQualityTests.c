@@ -15,17 +15,20 @@ static float diagnosticSample(unsigned long long sample, unsigned channel) {
 
 static void equalClockIdentity(void) {
     mixerMacFIFO *fifo=mixerMacFIFOCreate(); assert(fifo);
-    float input[4096*2],output[256*2];
-    AudioBufferList in={1,{{2,sizeof(input),input}}};
+    float input[512*2],output[256*2];
+    AudioBufferList in={1,{{2,sizeof(output),input}}};
     AudioBufferList out={1,{{2,sizeof(output),output}}};
-    for(unsigned i=0;i<4096;++i) for(unsigned c=0;c<2;++c) input[i*2+c]=diagnosticSample(i,c);
+    for(unsigned i=0;i<512;++i) for(unsigned c=0;c<2;++c) input[i*2+c]=diagnosticSample(i,c);
     mixerMacFIFOWrite(fifo,&in);
+    in.mBuffers[0].mData = input + 256 * 2;
+    mixerMacFIFOWrite(fifo,&in);
+    in.mBuffers[0].mData = input;
     in.mBuffers[0].mDataByteSize=sizeof(output);
     for(unsigned block=0;block<4000;++block) {
         mixerMacFIFORender(fifo,256,&out);
         for(unsigned i=0;i<256;++i) for(unsigned c=0;c<2;++c) {
             assert(output[i*2+c]==diagnosticSample((unsigned long long)block*256+i,c));
-            input[i*2+c]=diagnosticSample(4096+(unsigned long long)block*256+i,c);
+            input[i*2+c]=diagnosticSample(512+(unsigned long long)block*256+i,c);
         }
         mixerMacFIFOWrite(fifo,&in);
     }

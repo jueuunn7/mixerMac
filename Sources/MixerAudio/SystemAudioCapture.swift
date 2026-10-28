@@ -2,28 +2,55 @@ import Foundation
 import CoreAudio
 import AudioToolbox
 
+private final class AudioIOCallback: @unchecked Sendable {
+    private let feed: PCMFeed
+    private let receiver: (@Sendable (UnsafePointer<AudioBufferList>, Double) -> Void)?
+    private let sampleRate: Double
+
+    init(feed: PCMFeed, receiver: (@Sendable (UnsafePointer<AudioBufferList>, Double) -> Void)?, sampleRate: Double) {
+        self.feed = feed
+        self.receiver = receiver
+        self.sampleRate = sampleRate
+    }
+
+    nonisolated func handle(_ inputTime: UnsafePointer<AudioTimeStamp>, _ input: UnsafePointer<AudioBufferList>,
+                            _ outputTime: UnsafePointer<AudioTimeStamp>, _ output: UnsafeMutablePointer<AudioBufferList>,
+                            _ outputTime2: UnsafePointer<AudioTimeStamp>) {
+        feed.push(input, sampleRate: sampleRate)
+        receiver?(input, sampleRate)
+    }
+}
+
+@MainActor
+public protocol AudioCapturing {
+    func start() throws
+    func setProcesses(_ processes: [AudioObjectID]?) throws
+    func stop()
+}
+
 /// A private, unmuted process tap: observes playback without opening a microphone
 /// or sending a second copy of the sound to the output device.
 @available(macOS 14.2, *)
 @MainActor
-final class SystemAudioCapture {
+public final class SystemAudioCapture: AudioCapturing {
     private let feed: PCMFeed
     private var tapID = AudioObjectID(kAudioObjectUnknown)
     private var deviceID = AudioObjectID(kAudioObjectUnknown)
     private var ioProc: AudioDeviceIOProcID?
+    private var callback: AudioIOCallback?
     private var description: CATapDescription?
     private let processes: [AudioObjectID]?
     private let receiver: (@Sendable (UnsafePointer<AudioBufferList>, Double) -> Void)?
-    private(set) var sampleRate: Double = 48_000
+    public private(set) var sampleRate: Double = 48_000
 
-    init(feed: PCMFeed, processes: [AudioObjectID]? = nil,
+    public init(feed: PCMFeed, processes: [AudioObjectID]? = nil,
          receiver: (@Sendable (UnsafePointer<AudioBufferList>, Double) -> Void)? = nil) {
         self.feed = feed
         self.processes = processes
         self.receiver = receiver
     }
 
-    func start() throws {
+    public func start() throws {
         guard tapID == kAudioObjectUnknown else { return }
         do {
             let description = processes.map { CATapDescription(stereoMixdownOfProcesses: $0) }
@@ -59,10 +86,9 @@ final class SystemAudioCapture {
             try check(AudioHardwareCreateAggregateDevice(aggregate as CFDictionary, &deviceID), "Create private analyzer")
             let rate = format.mSampleRate
             self.sampleRate = rate
-            try check(AudioDeviceCreateIOProcIDWithBlock(&ioProc, deviceID, nil) { [feed, receiver] _, input, _, _, _ in
-                feed.push(input, sampleRate: rate)
-                receiver?(input, rate)
-            }, "Connect playback analyzer")
+            let callback = AudioIOCallback(feed: feed, receiver: receiver, sampleRate: rate)
+            self.callback = callback
+            try check(AudioDeviceCreateIOProcIDWithBlock(&ioProc, deviceID, nil, callback.handle), "Connect playback analyzer")
             feed.reset()
             try check(AudioDeviceStart(deviceID, ioProc), "Start playback analyzer")
         } catch {
@@ -71,13 +97,13 @@ final class SystemAudioCapture {
         }
     }
 
-    func setMutedWhenTapped(_ muted: Bool) throws {
+    public func setMutedWhenTapped(_ muted: Bool) throws {
         guard let description else { return }
         description.muteBehavior = muted ? .mutedWhenTapped : .unmuted
         try updateDescription(description)
     }
 
-    func setProcesses(_ processes: [AudioObjectID]?) throws {
+    public func setProcesses(_ processes: [AudioObjectID]?) throws {
         guard let description else { return }
         description.processes = processes ?? []
         description.isExclusive = processes == nil
@@ -92,12 +118,13 @@ final class SystemAudioCapture {
             UInt32(MemoryLayout<UnsafeMutableRawPointer>.size), &object), "Update app audio routing")
     }
 
-    func stop() {
+    public func stop() {
         if let ioProc, deviceID != kAudioObjectUnknown {
             AudioDeviceStop(deviceID, ioProc)
             AudioDeviceDestroyIOProcID(deviceID, ioProc)
         }
         ioProc = nil
+        callback = nil
         if deviceID != kAudioObjectUnknown { AudioHardwareDestroyAggregateDevice(deviceID) }
         if tapID != kAudioObjectUnknown { AudioHardwareDestroyProcessTap(tapID) }
         deviceID = AudioObjectID(kAudioObjectUnknown)
@@ -110,10 +137,10 @@ final class SystemAudioCapture {
         guard code == noErr else { throw CaptureError(operation: operation, code: code) }
     }
 
-    struct CaptureError: LocalizedError {
+    public struct CaptureError: LocalizedError {
         let operation: String
         let code: OSStatus
-        var errorDescription: String? {
+        public var errorDescription: String? {
             "\(operation) failed (\(code)). Allow mixerMac in System Settings → Privacy & Security → Screen & System Audio Recording, then retry."
         }
     }

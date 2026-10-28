@@ -1,34 +1,95 @@
+@testable import MixerAudio
+import MixerCore
+import MixerStandardNodes
 import Testing
 import Foundation
+import SwiftUI
 @preconcurrency import AVFAudio
 @testable import mixerMac
 
 struct ChannelDetailTests {
-    @Test @MainActor func neutralProcessingPreservesPCM() throws {
-        let processor = AppChannelProcessor()
-        processor.apply(AppChannelSettings(), audible: true, master: 1, sampleRate: 48_000)
-        let engine = AVAudioEngine()
-        let player = AVAudioPlayerNode()
+    @Test @MainActor func consoleResetRestoresToneAndPersistsWithoutChangingMixState() throws {
+        let domain = "mixerMac.ResetTone.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: domain))
+        defer { defaults.removePersistentDomain(forName: domain) }
+        let app = AudioApp(id: "reset", name: "Reset", icon: nil, processes: [], isPlaying: false)
+        let channel = AppAudioChannel(app: app, defaults: defaults)
+        var edited = ChannelSettings()
+        edited.pan = 0.7
+        edited.width = 1.8
+        edited.trimDB = 9
+        edited.gains[3] = 12
+        edited.frequencies[3] = 333
+        edited.bandwidths[3] = 2
+        edited.volume = 0.4
+        edited.isMuted = true
+        edited.isSolo = true
+        channel.settings = edited
+        var updates = 0
+        let subscription = channel.core.changes.sink { _ in updates += 1 }
+        channel.core.resetTone()
+        var expected = ChannelSettings()
+        expected.volume = 0.4
+        expected.isMuted = true
+        expected.isSolo = true
+        #expect(channel.settings == expected)
+        #expect(updates == 1)
+        let restored = AppAudioChannel(app: app, defaults: defaults)
+        #expect(restored.settings == expected)
+        withExtendedLifetime(subscription) {}
+    }
+
+    @Test @MainActor func signalHistoryPreservesPeaksAboveFullScale() throws {
         let format = try #require(AVAudioFormat(standardFormatWithSampleRate: 48_000, channels: 2))
-        engine.attach(player)
-        for node in [processor.eq, processor.levelControl, processor.masterEQ] { engine.attach(node) }
-        engine.connect(player, to: processor.eq, format: format)
-        engine.connect(processor.eq, to: processor.levelControl, format: format)
-        engine.connect(processor.levelControl, to: processor.masterEQ, format: format)
-        engine.connect(processor.masterEQ, to: engine.mainMixerNode, format: format)
-        try engine.enableManualRenderingMode(.offline, format: format, maximumFrameCount: 4096)
+        let buffer = try #require(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 4096))
+        buffer.frameLength = 4096
+        for index in 0..<4096 {
+            buffer.floatChannelData![0][index] = 2
+            buffer.floatChannelData![1][index] = -2
+        }
+        let feed = PCMFeed()
+        feed.push(buffer)
+        let detail = ChannelDetailModel()
+        detail.tick(settings: ChannelSettings(), feed: feed, isProcessing: true)
+        #expect(abs(detail.peakDB - 6.0206) < 0.001)
+        #expect(detail.history.last == detail.peakDB)
+        let rect = CGRect(x: 0, y: 0, width: 100, height: 114)
+        let zero = DetailAudioTrace.yPosition(0, plot: rect, ceiling: 24)
+        let trace = DetailAudioTrace(levels: [detail.peakDB, 0], plot: rect, history: true, ceiling: 24)
+        #expect(trace.path(in: rect).boundingRect.minY < zero)
+        #expect(DetailAudioTrace.yPosition(24, plot: rect, ceiling: 24) == rect.minY)
+        #expect(DetailAudioTrace.yPosition(-90, plot: rect, ceiling: 24) == rect.maxY)
+    }
+
+    @Test @MainActor func graphDragPublishesOneCompleteBandEdit() throws {
+        let domain = "mixerMac.GraphDrag.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: domain))
+        defer { defaults.removePersistentDomain(forName: domain) }
+        let app = AudioApp(id: "drag", name: "Drag", icon: nil, processes: [], isPlaying: false)
+        let channel = AppAudioChannel(app: app, defaults: defaults)
+        let settings = Binding(get: { channel.settings }, set: { channel.settings = $0 })
+        var edits: [(Float, Float)] = []
+        let subscription = channel.core.changes.sink { _ in
+            edits.append((channel.settings.frequencies[5], channel.settings.gains[5]))
+        }
+        setDetailBand(5, frequency: 1234, gain: 3.26, settings: settings)
+        #expect(edits.count == 1)
+        #expect(edits.first?.0 == 1234)
+        #expect(edits.first?.1 == 3.3)
+        let restored = AppAudioChannel(app: app, defaults: defaults)
+        #expect(restored.settings == channel.settings)
+        withExtendedLifetime(subscription) {}
+    }
+
+    @Test @MainActor func neutralProcessingPreservesPCM() throws {
+        let format = try #require(AVAudioFormat(standardFormatWithSampleRate: 48_000, channels: 2))
         let source = try #require(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 4096))
-        let output = try #require(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 4096))
         source.frameLength = 4096
         for index in 0..<4096 {
             source.floatChannelData![0][index] = Float((index * 1664525) % 65536 - 32768) / 65536
             source.floatChannelData![1][index] = Float((index * 1013904223) % 65536 - 32768) / 65536
         }
-        try engine.start()
-        defer { engine.stop() }
-        player.scheduleBuffer(source, at: nil, options: .loops)
-        player.play()
-        for _ in 0..<5 { #expect(try engine.renderOffline(4096, to: output) == .success) }
+        let output = try renderConsolePCM(source)
         var maximumError: Float = 0
         for channel in 0..<2 {
             for index in 0..<4096 {
@@ -45,11 +106,11 @@ struct ChannelDetailTests {
         defer { defaults.removePersistentDomain(forName: suite) }
         let app = AudioApp(id: "expanded.test", name: "Test", icon: nil, processes: [], isPlaying: false)
         let channel = AppAudioChannel(app: app, defaults: defaults)
-        channel.setGain(Float(gain), index: 5)
+        channel.core.equalizer.bands[5].gain.setValue(Float(gain))
         let restored = AppAudioChannel(app: app, defaults: defaults)
         #expect(restored.settings.gains[5] == Float(gain))
-        restored.processor.apply(restored.settings, audible: true, master: 1, sampleRate: 48_000)
-        #expect(restored.processor.eq.bands[5].gain == Float(gain))
+        let rendered = try renderedConsolePeak(settings: restored.settings, frequency: 1000, frames: 4800, amplitude: 0.01)
+        #expect(abs(20 * log10(rendered / 0.01) - Float(gain)) < 0.05)
         let response = try ChannelEQResponse().decibels(settings: restored.settings, frequencies: [1000], sampleRate: 48_000)
         #expect(abs(response[0] - gain) < 0.001)
     }
@@ -75,23 +136,20 @@ struct ChannelDetailTests {
         let channel = AppAudioChannel(app: app, defaults: defaults)
         channel.settings.frequencies[5] = 1234.5
         channel.settings.bandwidths[5] = 0.35
-        channel.setGain(3.7, index: 5)
+        channel.core.equalizer.bands[5].gain.setValue(3.7)
         let restored = AppAudioChannel(app: app, defaults: defaults)
         #expect(restored.settings.frequencies[5] == 1234.5)
         #expect(restored.settings.bandwidths[5] == 0.35)
         #expect(restored.settings.gains[5] == 3.7)
-        restored.processor.apply(restored.settings, audible: true, master: 1, sampleRate: 48_000)
-        let band = restored.processor.eq.bands[5]
-        #expect(band.frequency == 1234.5)
-        #expect(band.bandwidth == 0.35)
-        #expect(band.gain == 3.7)
+        let rendered = try renderedConsolePeak(settings: restored.settings, frequency: 1234.5, frames: 48000, amplitude: 0.01)
+        #expect(abs(20 * log10(rendered / 0.01) - 3.7) < 0.05)
     }
 
     @Test func olderSettingsKeepTheirToneAndDefaultBandShape() throws {
         let data = Data(#"{"gains":[0,0,0,0,0,3.5,0,0,0,0],"volume":0.7,"eqEnabled":true}"#.utf8)
-        let restored = try JSONDecoder().decode(AppChannelSettings.self, from: data)
+        let restored = try JSONDecoder().decode(ChannelSettings.self, from: data)
         #expect(restored.gains[5] == 3.5)
-        #expect(restored.frequencies == AppAudioChannel.frequencies)
+        #expect(restored.frequencies == EQSettings.frequencies)
         #expect(restored.bandwidths == Array(repeating: 1, count: 10))
     }
 
@@ -112,7 +170,7 @@ struct ChannelDetailTests {
 
     @Test(arguments: [44_100.0, 48_000.0]) @MainActor
     func responseMatchesRenderedAppleEQ(sampleRate: Double) throws {
-        var settings = AppChannelSettings()
+        var settings = ChannelSettings()
         settings.trimDB = -2
         settings.frequencies[5] = 1200
         settings.bandwidths[5] = 0.35
@@ -153,7 +211,7 @@ struct ChannelDetailTests {
             let measured = 10 * log10(outputPower / inputPower)
             #expect(abs(plotted - measured) < 0.08)
         }
-        let flat = try reader.decibels(settings: AppChannelSettings(), frequencies: [20, 1000, 16_000], sampleRate: sampleRate)
+        let flat = try reader.decibels(settings: ChannelSettings(), frequencies: [20, 1000, 16_000], sampleRate: sampleRate)
         #expect(flat.allSatisfy { abs($0) < 0.0001 })
     }
 }

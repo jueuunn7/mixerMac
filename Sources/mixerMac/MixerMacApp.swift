@@ -1,13 +1,17 @@
+import MixerAudio
 import SwiftUI
 import AppKit
 
 @main
 struct MixerMacApp: App {
     @NSApplicationDelegateAdaptor(MixerMacAppDelegate.self) private var appDelegate
-    init() { ConsolePreferences.migrateLegacySettings() }
+    init() {
+        ConsolePreferences.migrateLegacySettings()
+        ConsolePreferences.standardizeEQFrequencies()
+    }
 
     var body: some Scene {
-        WindowGroup("mixerMac") {
+        Window("mixerMac", id: "main") {
             MixerConsoleView()
                 .frame(minWidth: ConsoleLayout.minimumWindowWidth, minHeight: ConsoleLayout.windowHeight)
         }

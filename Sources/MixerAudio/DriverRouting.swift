@@ -1,19 +1,21 @@
+import MixerCore
+import MixerStandardNodes
 import Foundation
 import CoreAudio
 import AudioToolbox
 import mixerMacDSP
 @preconcurrency import AVFAudio
 
-struct OutputDevice: Identifiable, Hashable {
-    let id: AudioObjectID
-    let name: String
-    let uid: String
+public struct OutputDevice: Identifiable, Hashable {
+    public let id: AudioObjectID
+    public let name: String
+    public let uid: String
 }
 
-enum AudioDevices {
-    static let virtualUID = "mixerMacAudioDevice_UID"
+public enum AudioDevices {
+    public static let virtualUID = "mixerMacAudioDevice_UID"
 
-    static func all() -> [OutputDevice] {
+    public static func all() -> [OutputDevice] {
         var address = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDevices,
             mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
         var bytes: UInt32 = 0
@@ -27,14 +29,14 @@ enum AudioDevices {
         }
     }
 
-    static func hasOutput(_ id: AudioObjectID) -> Bool {
+    public static func hasOutput(_ id: AudioObjectID) -> Bool {
         var address = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyStreams,
             mScope: kAudioObjectPropertyScopeOutput, mElement: kAudioObjectPropertyElementMain)
         var bytes: UInt32 = 0
         return AudioObjectGetPropertyDataSize(id, &address, 0, nil, &bytes) == noErr && bytes > 0
     }
 
-    static func isPhysicalOutput(_ id: AudioObjectID) -> Bool {
+    public static func isPhysicalOutput(_ id: AudioObjectID) -> Bool {
         guard hasOutput(id) else { return false }
         // Some routing drivers advertise a hardware-like transport type.
         if let uid = string(id, selector: kAudioDevicePropertyDeviceUID), uid.lowercased().contains("eqmac") { return false }
@@ -46,7 +48,7 @@ enum AudioDevices {
         return transport != kAudioDeviceTransportTypeVirtual && transport != kAudioDeviceTransportTypeAggregate
     }
 
-    static func string(_ id: AudioObjectID, selector: AudioObjectPropertySelector) -> String? {
+    public static func string(_ id: AudioObjectID, selector: AudioObjectPropertySelector) -> String? {
         var address = AudioObjectPropertyAddress(mSelector: selector, mScope: kAudioObjectPropertyScopeGlobal,
             mElement: kAudioObjectPropertyElementMain)
         var value: UnsafeRawPointer? = nil
@@ -56,7 +58,7 @@ enum AudioDevices {
         return Unmanaged<CFString>.fromOpaque(value).takeRetainedValue() as String
     }
 
-    static func defaultOutput() -> AudioObjectID {
+    public static func defaultOutput() -> AudioObjectID {
         var address = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDefaultOutputDevice,
             mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
         var device = AudioObjectID(kAudioObjectUnknown)
@@ -65,7 +67,7 @@ enum AudioDevices {
         return device
     }
 
-    static func setDefaultOutput(_ device: AudioObjectID) throws {
+    public static func setDefaultOutput(_ device: AudioObjectID) throws {
         var address = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDefaultOutputDevice,
             mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
         var value = device
@@ -73,7 +75,7 @@ enum AudioDevices {
             UInt32(MemoryLayout<AudioObjectID>.size), &value), "Change playback device")
     }
 
-    static func sampleRate(_ device: AudioObjectID) -> Double {
+    public static func sampleRate(_ device: AudioObjectID) -> Double {
         var address = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyNominalSampleRate,
             mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
         var rate = 48_000.0
@@ -82,14 +84,14 @@ enum AudioDevices {
         return rate
     }
 
-    static func check(_ status: OSStatus, _ operation: String) throws {
+    public static func check(_ status: OSStatus, _ operation: String) throws {
         if status != noErr { throw RoutingError(operation: operation, status: status) }
     }
 
-    struct RoutingError: LocalizedError {
+    public struct RoutingError: LocalizedError {
         let operation: String
         let status: OSStatus
-        var errorDescription: String? { "\(operation) failed (\(status))" }
+        public var errorDescription: String? { "\(operation) failed (\(status))" }
     }
 }
 
@@ -114,6 +116,15 @@ final class DriverAudioBridge: @unchecked Sendable {
     func ingest(_ buffers: UnsafePointer<AudioBufferList>) {
         inputFeed.push(buffers, sampleRate: rate)
         mixerMacFIFOWrite(fifo, buffers)
+    }
+    nonisolated func write(_ buffers: UnsafePointer<AudioBufferList>, _ sampleRate: Double) {
+        mixerMacFIFOWrite(fifo, buffers)
+    }
+    nonisolated func render(_ flags: UnsafeMutablePointer<ObjCBool>,
+                           _ timestamp: UnsafePointer<AudioTimeStamp>, _ frames: AVAudioFrameCount,
+                           _ buffers: UnsafeMutablePointer<AudioBufferList>) -> OSStatus {
+        mixerMacFIFORender(fifo, frames, buffers)
+        return noErr
     }
     func render(_ frames: UInt32, buffers: UnsafeMutablePointer<AudioBufferList>) {
         mixerMacFIFORender(fifo, frames, buffers)
@@ -144,10 +155,7 @@ final class DriverRouting {
             guard let format = AVAudioFormat(standardFormatWithSampleRate: rate, channels: 2) else {
                 throw AudioDevices.RoutingError(operation: "Create stereo audio format", status: -1)
             }
-            let source = AVAudioSourceNode(format: format) { _, _, frames, buffers in
-                bridge.render(frames, buffers: buffers)
-                return noErr
-            }
+            let source = AVAudioSourceNode(format: format, renderBlock: bridge.render)
             let engine = AVAudioEngine()
             self.engine = engine
             self.source = source

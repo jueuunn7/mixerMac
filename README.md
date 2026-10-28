@@ -105,19 +105,27 @@ Run the app bundle for interactive use; it supplies the audio capture usage desc
 ./script/test_audio_bridge.sh
 ```
 
-The Swift suite covers EQ, rendered master gain, meters, stereo controls, persistence, and migration of saved settings. Native bridge tests cover buffering, neutral-signal preservation, resampling, and channel handling with AddressSanitizer and UndefinedBehaviorSanitizer enabled.
+The Swift suite covers graph validation, externally registered sources/effects, rendered routing, EQ, master gain, meters, stereo controls, recovery, persistence, and migration of saved settings. Native bridge tests cover buffering, neutral-signal preservation, resampling, and channel handling with AddressSanitizer and UndefinedBehaviorSanitizer enabled.
 
 ### Source layout
 
 | Location | Purpose |
 | --- | --- |
-| `Sources/mixerMac/` | SwiftUI console, Core Audio capture, channel discovery, EQ, and analysis |
+| `Sources/MixerCore/` | Generic parameters, nodes, channels, buses, validated routing, and snapshots |
+| `Sources/MixerStandardNodes/` | Console presets, standard effects, legacy settings, and display scales |
+| `Sources/MixerAudio/` | Shared graph playback, source/effect registries, session recovery, capture, and analysis |
+| `Sources/mixerMac/` | SwiftUI console, bindings, and window visibility |
 | `Sources/mixerMacDSP/` | Native audio bridge, buffering, and sample processing |
-| `Tests/mixerMacTests/` | Swift tests |
+| `Tests/MixerCoreTests/` | Generic core behavior, graph validation, and ownership tests |
+| `Tests/MixerStandardNodesTests/` | Standard preset behavior and snapshot tests |
+| `Tests/ExtensionFixtures/`, `Tests/AudioExtensionFixtures/` | Separate modules proving extension contracts |
+| `Tests/mixerMacTests/` | Audio, persistence, recovery, and core integration tests |
 | `Resources/` | App icon artwork and macOS icon bundle |
 | `docs/assets/` | Logo and screenshots used in this README |
 | `Driver/` | Optional experimental virtual audio driver and native tests |
 | `script/` | Build, test, packaging, and icon rendering helpers |
+
+See [the architecture guide](docs/architecture.md) for module responsibilities and headless verification.
 
 ### Release packaging
 
