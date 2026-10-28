@@ -61,13 +61,16 @@ struct ConsoleStereoDial: View {
         GeometryReader { geometry in
             ZStack(alignment: .topLeading) {
                 ConsoleEQKnob(value: $value, trim: true, tickRadius: 18)
-                    .position(x: geometry.size.width / 2, y: 20)
-                HStack(spacing: 3) {
-                    Text(title).font(.system(size: 7, weight: .bold))
-                    Text(readout).font(.system(size: 7, design: .monospaced))
-                }
-                .fixedSize()
-                .position(x: geometry.size.width / 2, y: 45)
+                    .position(x: geometry.size.width / 2, y: 24)
+                Text(title).font(.system(size: 8, weight: .bold))
+                    .fixedSize()
+                    .frame(width: geometry.size.width - 6, alignment: .leading)
+                    .position(x: geometry.size.width / 2, y: 0)
+                    .allowsHitTesting(false)
+                Text(readout).font(.system(size: 7, design: .monospaced))
+                    .fixedSize()
+                    .position(x: geometry.size.width / 2, y: 48)
+                    .allowsHitTesting(false)
             }
         }
         .frame(width: ConsoleLayout.controlBankWidth / 2, height: ConsoleLayout.masterStereoRowHeight)

@@ -148,11 +148,10 @@ struct ConsolePrintedKnob: View {
             ZStack(alignment: .topLeading) {
                 Canvas { context, _ in
                     let ink = Color(white: 0.12)
-                    let title = Text(label).font(.system(size: trim ? 9 : 8, weight: .bold))
+                    let title = Text(label).font(.system(size: 8, weight: .bold))
                         .foregroundStyle(ink)
                     context.draw(title,
-                                 at: CGPoint(x: trim ? center.x + 27 : 12,
-                                             y: center.y - (trim ? 10 : 7.5)),
+                                 at: CGPoint(x: 12, y: center.y - 7.5),
                                  anchor: .leading)
                     let low = Text("−24").font(.system(size: 7, weight: .medium)).foregroundStyle(ink)
                     let high = Text("+24").font(.system(size: 7, weight: .medium)).foregroundStyle(ink)

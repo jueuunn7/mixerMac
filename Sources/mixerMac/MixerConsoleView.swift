@@ -11,18 +11,18 @@ enum ConsoleLayout {
     static let windowWidth: CGFloat = 1000
     static let minimumWindowWidth: CGFloat = 960
     static let windowHeight: CGFloat = stripHeight + 16 + 61
-    static let appFaderHeight: CGFloat = 187
+    static let appFaderHeight: CGFloat = 179
     static let eqRowHeight: CGFloat = 45
     static let stripWidth: CGFloat = 150
     static let masterStereoRowHeight: CGFloat = 52
     static let controlBankWidth: CGFloat = 128
-    static let masterMeterHeight: CGFloat = 160
+    static let masterMeterHeight: CGFloat = 156
     static let stripTopInset: CGFloat = 12
     static let stripBottomInset: CGFloat = 10
     static let headerHeight: CGFloat = 35
     static let gainHeight: CGFloat = 45
     static let channelSpacing: CGFloat = 7
-    static let channelControlsHeight: CGFloat = 116
+    static let channelControlsHeight: CGFloat = 124
     static let eqBankInset: CGFloat = 4
     static let masterSpacing: CGFloat = 5
     static let masterWaveformHeight: CGFloat = 50
@@ -154,7 +154,7 @@ struct AppConsoleStrip: View {
                         channel.settings.gains = [Float](repeating: 0, count: EQSettings.frequencies.count)
                     }.accessibilityLabel("Reset \(channel.app.name) EQ").help("Reset this app's EQ")
                     Button("DETAIL") { showingDetail = true }
-                        .buttonStyle(ConsolePushButtonStyle())
+                        .buttonStyle(ConsolePushButtonStyle(symbol: "D"))
                         .accessibilityLabel("\(channel.app.name) Detail")
                         .help("Open \(channel.app.name) detail")
                 }.frame(width: ConsoleLayout.controlBankWidth)
@@ -213,12 +213,12 @@ struct MasterConsoleStrip: View {
                         mixer.masterEQ.gains = [Float](repeating: 0, count: BusEQSettings.frequencies.count)
                     }.accessibilityLabel("Reset master EQ").help("Reset master EQ")
                     Button("DETAIL") { showingDetail = true }
-                        .buttonStyle(ConsolePushButtonStyle())
+                        .buttonStyle(ConsolePushButtonStyle(symbol: "D"))
                         .accessibilityLabel("Master Detail")
                         .help("Open master detail")
                 }.frame(width: ConsoleLayout.controlBankWidth)
             }
-            .frame(maxWidth: .infinity).frame(height: ConsoleLayout.masterStereoRowHeight + 30)
+            .frame(maxWidth: .infinity).frame(height: ConsoleLayout.masterStereoRowHeight + 34)
             LiveStereoMasterMeter(left: mixer.masterLeftMetrics, right: mixer.masterRightMetrics)
                 .frame(height: ConsoleLayout.masterMeterHeight).padding(.horizontal, 14)
             Text("MASTER OUT")
@@ -241,7 +241,7 @@ struct MasterConsoleStrip: View {
 struct ConsoleResetButton: View {
     let action: () -> Void
     var body: some View {
-        Button("RESET", action: action).buttonStyle(ConsolePushButtonStyle())
+        Button("RESET", action: action).buttonStyle(ConsolePushButtonStyle(symbol: "R"))
     }
 }
 
@@ -368,32 +368,36 @@ struct ConsoleButton: View {
     let action: () -> Void
     var body: some View {
         Button(title, action: action)
-        .buttonStyle(ConsolePushButtonStyle(active: active, color: color))
+        .buttonStyle(ConsolePushButtonStyle(symbol: String(title.prefix(1)), active: active, color: color))
         .accessibilityLabel(title)
         .accessibilityValue(active ? "On" : "Off")
+        .help(title == "MUTE" ? "Mute channel" : "Solo channel")
     }
 }
 
 private struct ConsolePushButtonStyle: ButtonStyle {
+    let symbol: String
     var active = false
     var color = ConsolePalette.blue
     @Environment(\.isEnabled) private var enabled
 
     func makeBody(configuration: Configuration) -> some View {
-        HStack(spacing: 4) {
+        ZStack {
             Circle()
                 .fill(LinearGradient(colors: configuration.isPressed
                     ? [Color(white: 0.035), Color(white: 0.13)]
                     : [Color(white: 0.23), Color(white: 0.035)],
                     startPoint: .topLeading, endPoint: .bottomTrailing))
-                .frame(width: 16, height: 16)
+                .frame(width: 24, height: 24)
                 .overlay(Circle().stroke(active || configuration.isPressed ? color : .black.opacity(0.6), lineWidth: 3))
                 .shadow(color: .black.opacity(0.3), radius: 1, y: configuration.isPressed ? 0 : 1)
-            configuration.label
-                .font(.system(size: 7, weight: .black)).fixedSize()
+            Text(symbol)
+                .font(.system(size: 10, weight: .black, design: .monospaced))
+                .foregroundStyle(active ? color : Color(white: 0.88))
+                .allowsHitTesting(false)
         }
         .foregroundStyle(ConsolePalette.ink)
-        .frame(maxWidth: .infinity, alignment: .leading).frame(height: 24)
+        .frame(maxWidth: .infinity).frame(height: 28)
         .contentShape(Rectangle())
         .offset(y: configuration.isPressed ? 1 : 0)
         .opacity(enabled ? 1 : 0.5)
