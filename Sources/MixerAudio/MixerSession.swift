@@ -12,12 +12,13 @@ open class MixerSession: ObservableObject {
     @Published public private(set) var channels: [AppAudioChannel] = [] {
         didSet {
             let registered = core.channels
-            let changed = channels.filter { channel in !registered.contains { $0 === channel.core } }
-            if !changed.isEmpty {
+            let desired = channels.map(\.core)
+            let membershipChanged = registered.count != desired.count
+                || !zip(registered, desired).allSatisfy { $0 === $1 }
+            if membershipChanged {
                 updatingChannels = true
                 defer { updatingChannels = false; saveGraph(); apply() }
-                let ids = Set(changed.map(\.id))
-                core.replaceChannels(registered.filter { !ids.contains($0.id) } + changed.map(\.core))
+                core.replaceChannels(desired)
                 do { try filters?.connectChannels() }
                 catch { documentError = error; updateStatus() }
             }

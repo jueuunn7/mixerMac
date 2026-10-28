@@ -8,6 +8,12 @@ public final class AudioGraphRenderer {
         let inputs: [String: AudioEndpoint]
         let outputs: [String: AudioEndpoint]
     }
+    private struct BuildRequest {
+        let graph: AudioGraph
+        let output: PortAddress
+        let externalInputs: [PortAddress: AudioEndpoint]
+        let feeds: [PortAddress: PCMFeed]
+    }
     public let engine: AVAudioEngine
     public let format: AVAudioFormat
     private let registry: AudioProcessorRegistry
@@ -20,6 +26,7 @@ public final class AudioGraphRenderer {
     private var activeNodeIDs: Set<String> = []
     private var nodeOutputs: [PortAddress: AudioEndpoint] = [:]
     private var graphIdentity: ObjectIdentifier?
+    private var lastBuild: BuildRequest?
 
     public init(engine: AVAudioEngine, format: AVAudioFormat, registry: AudioProcessorRegistry) {
         self.engine = engine
@@ -30,6 +37,33 @@ public final class AudioGraphRenderer {
     public func rebuild(_ graph: AudioGraph, output: PortAddress,
                         externalInputs: [PortAddress: AudioEndpoint] = [:], feeds: [PortAddress: PCMFeed] = [:]) throws {
         guard !engine.isRunning else { throw AudioGraphError.engineRunning }
+        let request = BuildRequest(graph: graph, output: output, externalInputs: externalInputs, feeds: feeds)
+        let previous = lastBuild
+        do {
+            try rebuildOnce(request)
+            lastBuild = request
+        } catch {
+            clearRuntime()
+            do {
+                if let previous {
+                    try rebuildOnce(previous)
+                    lastBuild = previous
+                } else {
+                    lastBuild = nil
+                }
+            } catch {
+                clearRuntime()
+                lastBuild = nil
+            }
+            throw error
+        }
+    }
+
+    private func rebuildOnce(_ request: BuildRequest) throws {
+        let graph = request.graph
+        let output = request.output
+        let externalInputs = request.externalInputs
+        let feeds = request.feeds
         // Build and validate every adapter before touching the running engine.
         var definitions: [String: AudioProcessor] = [:]
         var nativeIDs: Set<ObjectIdentifier> = []
@@ -72,7 +106,7 @@ public final class AudioGraphRenderer {
                 throw AudioGraphError.unsupportedPort(address)
             }
         }
-        detach()
+        clearRuntime()
         var roots: [String: RuntimeNode] = [:]
         for node in order { roots[node.id] = build(node, ancestors: [], definitions: definitions) }
         for edge in graph.connections {
@@ -122,6 +156,11 @@ public final class AudioGraphRenderer {
     }
 
     public func detach() {
+        clearRuntime()
+        lastBuild = nil
+    }
+
+    private func clearRuntime() {
         for tap in taps { tap.node.removeTap(onBus: tap.bus) }
         taps.removeAll()
         for node in attached {
