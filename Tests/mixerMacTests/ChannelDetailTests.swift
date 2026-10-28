@@ -8,6 +8,28 @@ import SwiftUI
 @testable import mixerMac
 
 struct ChannelDetailTests {
+    @Test @MainActor func signalHistoryPreservesPeaksAboveFullScale() throws {
+        let format = try #require(AVAudioFormat(standardFormatWithSampleRate: 48_000, channels: 2))
+        let buffer = try #require(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 4096))
+        buffer.frameLength = 4096
+        for index in 0..<4096 {
+            buffer.floatChannelData![0][index] = 2
+            buffer.floatChannelData![1][index] = -2
+        }
+        let feed = PCMFeed()
+        feed.push(buffer)
+        let detail = ChannelDetailModel()
+        detail.tick(settings: ChannelSettings(), feed: feed, isProcessing: true)
+        #expect(abs(detail.peakDB - 6.0206) < 0.001)
+        #expect(detail.history.last == detail.peakDB)
+        let rect = CGRect(x: 0, y: 0, width: 100, height: 114)
+        let zero = DetailAudioTrace.yPosition(0, plot: rect, ceiling: 24)
+        let trace = DetailAudioTrace(levels: [detail.peakDB, 0], plot: rect, history: true, ceiling: 24)
+        #expect(trace.path(in: rect).boundingRect.minY < zero)
+        #expect(DetailAudioTrace.yPosition(24, plot: rect, ceiling: 24) == rect.minY)
+        #expect(DetailAudioTrace.yPosition(-90, plot: rect, ceiling: 24) == rect.maxY)
+    }
+
     @Test @MainActor func graphDragPublishesOneCompleteBandEdit() throws {
         let domain = "mixerMac.GraphDrag.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: domain))

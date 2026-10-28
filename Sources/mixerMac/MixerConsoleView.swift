@@ -11,18 +11,18 @@ enum ConsoleLayout {
     static let windowWidth: CGFloat = 1000
     static let minimumWindowWidth: CGFloat = 960
     static let windowHeight: CGFloat = stripHeight + 16 + 61
-    static let appFaderHeight: CGFloat = 179
+    static let appFaderHeight: CGFloat = 175
     static let eqRowHeight: CGFloat = 45
     static let stripWidth: CGFloat = 150
     static let masterStereoRowHeight: CGFloat = 52
     static let controlBankWidth: CGFloat = 128
-    static let masterMeterHeight: CGFloat = 156
+    static let masterMeterHeight: CGFloat = 148
     static let stripTopInset: CGFloat = 12
     static let stripBottomInset: CGFloat = 10
     static let headerHeight: CGFloat = 35
     static let gainHeight: CGFloat = 45
     static let channelSpacing: CGFloat = 7
-    static let channelControlsHeight: CGFloat = 124
+    static let channelControlsHeight: CGFloat = 128
     static let eqBankInset: CGFloat = 4
     static let masterSpacing: CGFloat = 5
     static let masterWaveformHeight: CGFloat = 50
@@ -145,19 +145,21 @@ struct AppConsoleStrip: View {
             VStack(spacing: 8) {
                 ConsoleStereoPair(pan: channel.core.pan.binding, width: channel.core.width.binding,
                     accessibilityPrefix: channel.app.name)
-                HStack(spacing: 8) {
-                    ConsoleButton(title: "MUTE", active: channel.isMuted, color: .red) { channel.isMuted.toggle() }
-                    ConsoleButton(title: "SOLO", active: channel.isSolo, color: .yellow) { channel.isSolo.toggle() }
-                }.frame(width: ConsoleLayout.controlBankWidth)
-                HStack(spacing: 8) {
-                    ConsoleResetButton {
-                        channel.settings.gains = [Float](repeating: 0, count: EQSettings.frequencies.count)
-                    }.accessibilityLabel("Reset \(channel.app.name) EQ").help("Reset this app's EQ")
-                    Button("DETAIL") { showingDetail = true }
-                        .buttonStyle(ConsolePushButtonStyle(symbol: "D"))
-                        .accessibilityLabel("\(channel.app.name) Detail")
-                        .help("Open \(channel.app.name) detail")
-                }.frame(width: ConsoleLayout.controlBankWidth)
+                ConsoleButtonBank {
+                    HStack(spacing: 0) {
+                        ConsoleButton(title: "MUTE", active: channel.isMuted, color: .red) { channel.isMuted.toggle() }
+                        ConsoleButton(title: "SOLO", active: channel.isSolo, color: .yellow) { channel.isSolo.toggle() }
+                    }
+                    HStack(spacing: 0) {
+                        ConsoleResetButton {
+                            channel.settings.gains = [Float](repeating: 0, count: EQSettings.frequencies.count)
+                        }.accessibilityLabel("Reset \(channel.app.name) EQ").help("Reset this app's EQ")
+                        Button("DETAIL") { showingDetail = true }
+                            .buttonStyle(ConsolePushButtonStyle(symbol: "D"))
+                            .accessibilityLabel("\(channel.app.name) Detail")
+                            .help("Open \(channel.app.name) detail")
+                    }
+                }
             }.frame(maxWidth: .infinity).frame(height: ConsoleLayout.channelControlsHeight)
 
             HStack(alignment: .top, spacing: 8) {
@@ -208,17 +210,19 @@ struct MasterConsoleStrip: View {
             VStack(spacing: 6) {
                 ConsoleStereoPair(pan: mixer.core.master.pan.binding, width: mixer.core.master.width.binding,
                     accessibilityPrefix: "Master")
-                HStack(spacing: 8) {
-                    ConsoleResetButton {
-                        mixer.masterEQ.gains = [Float](repeating: 0, count: BusEQSettings.frequencies.count)
-                    }.accessibilityLabel("Reset master EQ").help("Reset master EQ")
-                    Button("DETAIL") { showingDetail = true }
-                        .buttonStyle(ConsolePushButtonStyle(symbol: "D"))
-                        .accessibilityLabel("Master Detail")
-                        .help("Open master detail")
-                }.frame(width: ConsoleLayout.controlBankWidth)
+                ConsoleButtonBank {
+                    HStack(spacing: 0) {
+                        ConsoleResetButton {
+                            mixer.masterEQ.gains = [Float](repeating: 0, count: BusEQSettings.frequencies.count)
+                        }.accessibilityLabel("Reset master EQ").help("Reset master EQ")
+                        Button("DETAIL") { showingDetail = true }
+                            .buttonStyle(ConsolePushButtonStyle(symbol: "D"))
+                            .accessibilityLabel("Master Detail")
+                            .help("Open master detail")
+                    }
+                }
             }
-            .frame(maxWidth: .infinity).frame(height: ConsoleLayout.masterStereoRowHeight + 34)
+            .frame(maxWidth: .infinity).frame(height: ConsoleLayout.masterStereoRowHeight + 42)
             LiveStereoMasterMeter(left: mixer.masterLeftMetrics, right: mixer.masterRightMetrics)
                 .frame(height: ConsoleLayout.masterMeterHeight).padding(.horizontal, 14)
             Text("MASTER OUT")
@@ -372,6 +376,18 @@ struct ConsoleButton: View {
         .accessibilityLabel(title)
         .accessibilityValue(active ? "On" : "Off")
         .help(title == "MUTE" ? "Mute channel" : "Solo channel")
+    }
+}
+
+private struct ConsoleButtonBank<Content: View>: View {
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        VStack(spacing: 4) { content }
+            .frame(width: 76)
+            .padding(4)
+            .background(.black.opacity(0.045), in: RoundedRectangle(cornerRadius: 8))
+            .overlay(RoundedRectangle(cornerRadius: 8).stroke(.black.opacity(0.12), lineWidth: 0.6))
     }
 }
 

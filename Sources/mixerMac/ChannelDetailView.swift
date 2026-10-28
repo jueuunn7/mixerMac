@@ -284,25 +284,39 @@ private struct DetailResponsePlot: View {
 private struct DetailSignalPlot: View {
     @ObservedObject var detail: ChannelDetailModel
     let history: Bool
+    private var recentPeak: Double { detail.history.max() ?? -90 }
+    private var ceiling: Double { history ? max(24, ceil(max(0, recentPeak) / 12) * 12) : 0 }
+
+    private func formattedPeak(_ value: Double) -> String {
+        value <= -90 ? "−∞" : String(format: "%+.1f", value)
+    }
     var body: some View {
         VStack(spacing: 4) {
             HStack {
                 Text(history ? "SIGNAL LEVEL · 15 s" : "LIVE SPECTRUM · SMOOTH").font(.system(size: 10, weight: .bold)).tracking(0.5)
                 Spacer()
-                Text(history ? (detail.peakDB <= -90 ? "−∞ dBFS" : String(format: "%+.1f dBFS", detail.peakDB)) : (detail.receivingAudio ? "LIVE" : "NO SIGNAL"))
-                    .font(.system(size: 9, design: .monospaced)).foregroundStyle(.secondary)
+                Text(history ? "\(formattedPeak(detail.peakDB)) · MAX \(formattedPeak(recentPeak)) dBFS" : (detail.receivingAudio ? "LIVE" : "NO SIGNAL"))
+                    .font(.system(size: 9, design: .monospaced))
+                    .foregroundStyle(history && recentPeak > 0 ? Color.red : Color.secondary)
             }
             GeometryReader { proxy in
                 let rect = CGRect(x: 35, y: 10, width: proxy.size.width - 47, height: proxy.size.height - 30)
                 let values = history ? detail.history : detail.spectrum.map(Double.init)
                 ZStack {
-                DetailAnimatedTrace(levels: values, plot: rect, history: history)
+                DetailAnimatedTrace(levels: values, plot: rect, history: history, ceiling: ceiling)
                 Canvas { context, _ in
-                for db in [0.0, -30, -60, -90] {
-                    let y = rect.minY - rect.height * db / 90
+                if history {
+                    let zeroY = DetailAudioTrace.yPosition(0, plot: rect, ceiling: ceiling)
+                    context.fill(Path(CGRect(x: rect.minX, y: rect.minY, width: rect.width, height: zeroY - rect.minY)),
+                        with: .color(.red.opacity(0.08)))
+                }
+                let marksDB: [Double] = history ? [ceiling, ceiling / 2, 0, -30, -60, -90] : [0, -30, -60, -90]
+                for db in marksDB {
+                    let y = DetailAudioTrace.yPosition(db, plot: rect, ceiling: ceiling)
                     var line = Path(); line.move(to: CGPoint(x: rect.minX, y: y)); line.addLine(to: CGPoint(x: rect.maxX, y: y))
-                    context.stroke(line, with: .color(.white.opacity(0.1)), lineWidth: 0.6)
-                    context.draw(Text(String(format: "%.0f", db)).font(.system(size: 8, design: .monospaced)).foregroundStyle(.gray), at: CGPoint(x: 16, y: y))
+                    context.stroke(line, with: .color(history && db == 0 ? .orange.opacity(0.8) : .white.opacity(0.1)), lineWidth: history && db == 0 ? 1 : 0.6)
+                    context.draw(Text(String(format: db > 0 ? "+%.0f" : "%.0f", db))
+                        .font(.system(size: 8, design: .monospaced)).foregroundStyle(history && db >= 0 ? Color.orange : Color.gray), at: CGPoint(x: 16, y: y))
                 }
                 let marks: [(String, Double)] = history ? [("−15 s", 0), ("−7.5 s", 0.5), ("NOW", 1)] : [("20 Hz", 0), ("1k", log(1000 / 20) / log(detail.upperFrequency / 20)), (String(format: "%.0fk", detail.upperFrequency / 1000), 1)]
                 for (label, position) in marks {
