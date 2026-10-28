@@ -281,12 +281,18 @@ final class AppAudioChannel: ObservableObject, Identifiable {
     @Published var message = "LISTENING"
     let input = PCMFeed()
     let postEQ = PCMFeed()
-    private var passiveCapture: SystemAudioCapture?
+    private var passiveCapture: (any AudioCapturing)?
+    private let makeCapture: @MainActor (PCMFeed, [AudioObjectID]?) -> any AudioCapturing
+    private var needsProcessUpdate = false
     let processor: AppChannelProcessor
     private(set) var sampleRate: Double = 48_000
 
-    init(app: AudioApp, defaults: UserDefaults = .standard) {
+    init(app: AudioApp, defaults: UserDefaults = .standard,
+         makeCapture: @escaping @MainActor (PCMFeed, [AudioObjectID]?) -> any AudioCapturing = {
+             SystemAudioCapture(feed: $0, processes: $1)
+         }) {
         self.defaults = defaults
+        self.makeCapture = makeCapture
         self.id = app.id
         self.app = app
         processor = AppChannelProcessor()
@@ -302,7 +308,7 @@ final class AppAudioChannel: ObservableObject, Identifiable {
         guard passiveCapture == nil, !isProcessing else { return }
         guard app.isPlaying else { message = "IDLE"; return }
         do {
-            let capture = SystemAudioCapture(feed: input, processes: app.processes)
+            let capture = makeCapture(input, app.processes)
             try capture.start()
             passiveCapture = capture
             message = "LISTENING"
@@ -323,15 +329,24 @@ final class AppAudioChannel: ObservableObject, Identifiable {
         listen()
     }
 
-    func shutdown() { processor.stop(); passiveCapture?.stop(); passiveCapture = nil }
+    func shutdown() {
+        processor.stop()
+        passiveCapture?.stop()
+        passiveCapture = nil
+        isProcessing = false
+    }
 
     func update(app: AudioApp) {
         let changed = self.app.processes != app.processes
         if changed || self.app.isPlaying != app.isPlaying || self.app.name != app.name { self.app = app }
-        if changed {
+        if changed { needsProcessUpdate = true }
+        if needsProcessUpdate {
             do {
                 try passiveCapture?.setProcesses(app.processes)
                 try processor.updateProcesses(app.processes)
+                needsProcessUpdate = false
+                if isProcessing { message = "LIVE" }
+                else if passiveCapture != nil { message = "LISTENING" }
             } catch { message = "RECONNECT NEEDED" }
         }
         if !isProcessing {
@@ -378,7 +393,8 @@ final class MixerConsoleModel: ObservableObject {
     let masterRightMetrics = ChannelAudioMetrics()
     let masterWaveform = MasterWaveformMetrics()
     let masterFeed = PCMFeed()
-    private var masterCapture: SystemAudioCapture?
+    private var masterCapture: (any AudioCapturing)?
+    private let makeCapture: @MainActor (PCMFeed, [AudioObjectID]?) -> any AudioCapturing
     private var ticks = 0
     private var masterProcessIDs: [AudioObjectID] = []
     private let preferences: ConsolePreferences
@@ -386,8 +402,12 @@ final class MixerConsoleModel: ObservableObject {
     private var runRestoration: MixerRunRestoration
     private var isShuttingDown = false
 
-    init(preferences: ConsolePreferences = ConsolePreferences()) {
+    init(preferences: ConsolePreferences = ConsolePreferences(),
+         makeCapture: @escaping @MainActor (PCMFeed, [AudioObjectID]?) -> any AudioCapturing = {
+             SystemAudioCapture(feed: $0, processes: $1)
+         }) {
         self.preferences = preferences
+        self.makeCapture = makeCapture
         preferredOutputUID = preferences.outputUID
         runRestoration = MixerRunRestoration(preferences: preferences)
         masterEQ = BusEQSettings.restored(defaults: preferences.defaults)
@@ -402,19 +422,21 @@ final class MixerConsoleModel: ObservableObject {
 
     func start() {
         guard !isShuttingDown, masterCapture == nil else { return }
-        let capture = SystemAudioCapture(feed: masterFeed)
-        masterCapture = capture
-        do {
-            try capture.start()
-            refresh()
-        } catch {
-            refresh()
-            status = "Allow system audio access, then click Refresh"
-        }
+        refresh()
     }
 
     func refresh() {
         guard !isShuttingDown else { return }
+        if masterCapture == nil {
+            let capture = makeCapture(masterFeed, nil)
+            do {
+                try capture.start()
+                masterCapture = capture
+            } catch { capture.stop() }
+        }
+        defer {
+            if masterCapture == nil { status = "Allow system audio access, then click Refresh" }
+        }
         let allDevices = AudioDevices.all()
         let devices = allDevices.filter { AudioDevices.isPhysicalOutput($0.id) }
         restoreOutputSelection(devices: devices, defaultOutputID: AudioDevices.defaultOutput())
@@ -422,7 +444,7 @@ final class MixerConsoleModel: ObservableObject {
         for app in detected {
             if let existing = channels.first(where: { $0.id == app.id }) { existing.update(app: app) }
             else {
-                let channel = AppAudioChannel(app: app, defaults: preferences.defaults)
+                let channel = AppAudioChannel(app: app, defaults: preferences.defaults, makeCapture: makeCapture)
                 channels.append(channel)
                 channel.listen()
                 if isMixing, let output = outputs.first(where: { $0.id == outputID }) {

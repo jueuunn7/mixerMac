@@ -2,11 +2,18 @@ import Foundation
 import CoreAudio
 import AudioToolbox
 
+@MainActor
+protocol AudioCapturing {
+    func start() throws
+    func setProcesses(_ processes: [AudioObjectID]?) throws
+    func stop()
+}
+
 /// A private, unmuted process tap: observes playback without opening a microphone
 /// or sending a second copy of the sound to the output device.
 @available(macOS 14.2, *)
 @MainActor
-final class SystemAudioCapture {
+final class SystemAudioCapture: AudioCapturing {
     private let feed: PCMFeed
     private var tapID = AudioObjectID(kAudioObjectUnknown)
     private var deviceID = AudioObjectID(kAudioObjectUnknown)
