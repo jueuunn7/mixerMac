@@ -25,16 +25,6 @@ public final class ConsoleFilters {
     public func connectChannels() throws {
         var nodes = mixer.graph.nodes
         var connections = mixer.graph.connections
-        let channelIDs = Set(mixer.channels.map(\.id))
-        let staleRouters = Set(nodes.compactMap { node -> String? in
-            guard node.id.hasSuffix(".filter-route") else { return nil }
-            let channelID = String(node.id.dropLast(".filter-route".count))
-            return channelIDs.contains(channelID) ? nil : node.id
-        })
-        if !staleRouters.isEmpty {
-            nodes.removeAll { staleRouters.contains($0.id) }
-            connections.removeAll { staleRouters.contains($0.source.nodeID) || staleRouters.contains($0.destination.nodeID) }
-        }
         for bank in banks where !nodes.contains(where: { $0 === bank }) {
             nodes.append(bank)
             connections.append(AudioConnection(source: PortAddress(nodeID: bank.id, portID: "output"),

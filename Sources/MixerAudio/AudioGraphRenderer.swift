@@ -1,6 +1,16 @@
 import MixerCore
 @preconcurrency import AVFAudio
 
+private final class AudioTapCallback: @unchecked Sendable {
+    private let feed: PCMFeed
+
+    init(feed: PCMFeed) { self.feed = feed }
+
+    nonisolated func handle(_ buffer: AVAudioPCMBuffer, _ time: AVAudioTime?) {
+        feed.push(buffer)
+    }
+}
+
 @MainActor
 public final class AudioGraphRenderer {
     private struct Connection { let source: AudioEndpoint; let destination: AudioEndpoint }
@@ -27,6 +37,8 @@ public final class AudioGraphRenderer {
     private var nodeOutputs: [PortAddress: AudioEndpoint] = [:]
     private var graphIdentity: ObjectIdentifier?
     private var lastBuild: BuildRequest?
+    private var tapCallbacks: [AudioTapCallback] = []
+    private var runtimeIsAttached = false
 
     public init(engine: AVAudioEngine, format: AVAudioFormat, registry: AudioProcessorRegistry) {
         self.engine = engine
@@ -43,6 +55,7 @@ public final class AudioGraphRenderer {
             try rebuildOnce(request)
             lastBuild = request
         } catch {
+            if runtimeIsAttached { throw error }
             clearRuntime()
             do {
                 if let previous {
@@ -133,12 +146,15 @@ public final class AudioGraphRenderer {
         connectAll()
         for (address, feed) in feeds {
             guard let endpoint = nodeOutputs[address] else { continue }
-            endpoint.node.installTap(onBus: endpoint.bus, bufferSize: 1024, format: nil) { buffer, _ in feed.push(buffer) }
+            let callback = AudioTapCallback(feed: feed)
+            endpoint.node.installTap(onBus: endpoint.bus, bufferSize: 1024, format: nil, block: callback.handle)
+            tapCallbacks.append(callback)
             taps.append(endpoint)
         }
         topologyRevision = graph.topologyRevision
         graphIdentity = ObjectIdentifier(graph)
         apply()
+        runtimeIsAttached = true
     }
 
     public func isCurrent(for graph: AudioGraph) -> Bool {
@@ -161,8 +177,10 @@ public final class AudioGraphRenderer {
     }
 
     private func clearRuntime() {
+        runtimeIsAttached = false
         for tap in taps { tap.node.removeTap(onBus: tap.bus) }
         taps.removeAll()
+        tapCallbacks.removeAll()
         for node in attached {
             engine.disconnectNodeInput(node)
             engine.disconnectNodeOutput(node)

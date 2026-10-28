@@ -117,6 +117,15 @@ final class DriverAudioBridge: @unchecked Sendable {
         inputFeed.push(buffers, sampleRate: rate)
         mixerMacFIFOWrite(fifo, buffers)
     }
+    nonisolated func write(_ buffers: UnsafePointer<AudioBufferList>, _ sampleRate: Double) {
+        mixerMacFIFOWrite(fifo, buffers)
+    }
+    nonisolated func render(_ flags: UnsafeMutablePointer<ObjCBool>,
+                           _ timestamp: UnsafePointer<AudioTimeStamp>, _ frames: AVAudioFrameCount,
+                           _ buffers: UnsafeMutablePointer<AudioBufferList>) -> OSStatus {
+        mixerMacFIFORender(fifo, frames, buffers)
+        return noErr
+    }
     func render(_ frames: UInt32, buffers: UnsafeMutablePointer<AudioBufferList>) {
         mixerMacFIFORender(fifo, frames, buffers)
     }
@@ -146,10 +155,7 @@ final class DriverRouting {
             guard let format = AVAudioFormat(standardFormatWithSampleRate: rate, channels: 2) else {
                 throw AudioDevices.RoutingError(operation: "Create stereo audio format", status: -1)
             }
-            let source = AVAudioSourceNode(format: format) { _, _, frames, buffers in
-                bridge.render(frames, buffers: buffers)
-                return noErr
-            }
+            let source = AVAudioSourceNode(format: format, renderBlock: bridge.render)
             let engine = AVAudioEngine()
             self.engine = engine
             self.source = source

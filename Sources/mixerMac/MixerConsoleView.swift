@@ -235,10 +235,10 @@ struct MasterConsoleStrip: View {
                 Spacer(minLength: 0)
             }.frame(height: ConsoleLayout.headerHeight)
 
+            MasterWaveformView(metrics: mixer.masterWaveform).frame(height: ConsoleLayout.masterWaveformHeight)
+
             ConsolePrintedKnob(value: mixer.core.master.equalizer.gain.binding, label: "GAIN", trim: true)
                 .frame(height: ConsoleLayout.gainHeight).accessibilityLabel("Master gain")
-
-            MasterWaveformView(metrics: mixer.masterWaveform).frame(height: ConsoleLayout.masterWaveformHeight)
 
             VStack(spacing: 0) {
                 ForEach(Array(BusEQSettings.frequencies.indices.reversed()), id: \.self) { band in
