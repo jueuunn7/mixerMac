@@ -152,10 +152,10 @@ struct AppConsoleStrip: View {
                     }
                     HStack(spacing: 0) {
                         ConsoleResetButton {
-                            channel.settings.gains = [Float](repeating: 0, count: EQSettings.frequencies.count)
-                        }.accessibilityLabel("Reset \(channel.app.name) EQ").help("Reset this app's EQ")
+                            channel.core.resetTone()
+                        }.accessibilityLabel("Reset \(channel.app.name) tone").help("Reset EQ, trim, pan and width")
                         Button("DETAIL") { showingDetail = true }
-                            .buttonStyle(ConsolePushButtonStyle(symbol: "D"))
+                            .buttonStyle(ConsolePushButtonStyle())
                             .accessibilityLabel("\(channel.app.name) Detail")
                             .help("Open \(channel.app.name) detail")
                     }
@@ -192,8 +192,8 @@ struct MasterConsoleStrip: View {
                 Spacer(minLength: 0)
             }.frame(height: ConsoleLayout.headerHeight)
 
-            ConsolePrintedKnob(value: mixer.core.master.equalizer.gain.binding, label: "GAIN", trim: true)
-                .accessibilityLabel("Master gain")
+            ConsolePrintedKnob(value: mixer.core.master.equalizer.gain.binding, label: "TRIM", trim: true)
+                .accessibilityLabel("Master trim")
 
             MasterWaveformView(metrics: mixer.masterWaveform).frame(height: ConsoleLayout.masterWaveformHeight)
 
@@ -213,10 +213,10 @@ struct MasterConsoleStrip: View {
                 ConsoleButtonBank {
                     HStack(spacing: 0) {
                         ConsoleResetButton {
-                            mixer.masterEQ.gains = [Float](repeating: 0, count: BusEQSettings.frequencies.count)
-                        }.accessibilityLabel("Reset master EQ").help("Reset master EQ")
+                            mixer.core.master.resetTone()
+                        }.accessibilityLabel("Reset master tone").help("Reset master EQ, trim, pan and width")
                         Button("DETAIL") { showingDetail = true }
-                            .buttonStyle(ConsolePushButtonStyle(symbol: "D"))
+                            .buttonStyle(ConsolePushButtonStyle())
                             .accessibilityLabel("Master Detail")
                             .help("Open master detail")
                     }
@@ -245,7 +245,7 @@ struct MasterConsoleStrip: View {
 struct ConsoleResetButton: View {
     let action: () -> Void
     var body: some View {
-        Button("RESET", action: action).buttonStyle(ConsolePushButtonStyle(symbol: "R"))
+        Button("RESET", action: action).buttonStyle(ConsolePushButtonStyle())
     }
 }
 
@@ -372,7 +372,7 @@ struct ConsoleButton: View {
     let action: () -> Void
     var body: some View {
         Button(title, action: action)
-        .buttonStyle(ConsolePushButtonStyle(symbol: String(title.prefix(1)), active: active, color: color))
+        .buttonStyle(ConsolePushButtonStyle(active: active, color: color, isToggle: true))
         .accessibilityLabel(title)
         .accessibilityValue(active ? "On" : "Off")
         .help(title == "MUTE" ? "Mute channel" : "Solo channel")
@@ -383,39 +383,30 @@ private struct ConsoleButtonBank<Content: View>: View {
     @ViewBuilder let content: Content
 
     var body: some View {
-        VStack(spacing: 4) { content }
-            .frame(width: 76)
-            .padding(4)
-            .background(.black.opacity(0.045), in: RoundedRectangle(cornerRadius: 8))
-            .overlay(RoundedRectangle(cornerRadius: 8).stroke(.black.opacity(0.12), lineWidth: 0.6))
+        VStack(spacing: 5) { content }
+            .frame(width: 120)
     }
 }
 
 private struct ConsolePushButtonStyle: ButtonStyle {
-    let symbol: String
     var active = false
     var color = ConsolePalette.blue
+    var isToggle = false
     @Environment(\.isEnabled) private var enabled
 
     func makeBody(configuration: Configuration) -> some View {
-        ZStack {
-            Circle()
-                .fill(LinearGradient(colors: configuration.isPressed
-                    ? [Color(white: 0.035), Color(white: 0.13)]
-                    : [Color(white: 0.23), Color(white: 0.035)],
-                    startPoint: .topLeading, endPoint: .bottomTrailing))
-                .frame(width: 24, height: 24)
-                .overlay(Circle().stroke(active || configuration.isPressed ? color : .black.opacity(0.6), lineWidth: 3))
-                .shadow(color: .black.opacity(0.3), radius: 1, y: configuration.isPressed ? 0 : 1)
-            Text(symbol)
-                .font(.system(size: 10, weight: .black, design: .monospaced))
-                .foregroundStyle(active ? color : Color(white: 0.88))
-                .allowsHitTesting(false)
+        HStack(spacing: 4) {
+            if isToggle {
+                Circle().fill(active ? color : Color(white: 0.35)).frame(width: 4, height: 4)
+            }
+            configuration.label
+                .font(.system(size: 8, weight: .bold, design: .monospaced))
         }
-        .foregroundStyle(ConsolePalette.ink)
         .frame(maxWidth: .infinity).frame(height: 28)
+        .foregroundStyle(isToggle ? (active ? color : Color(white: 0.9)) : ConsolePalette.ink)
+        .background(isToggle ? Color(white: configuration.isPressed ? 0.12 : 0.19) : Color.black.opacity(configuration.isPressed ? 0.16 : 0.045))
+        .overlay(Rectangle().stroke(active ? color : .black.opacity(0.3), lineWidth: 0.6))
         .contentShape(Rectangle())
-        .offset(y: configuration.isPressed ? 1 : 0)
         .opacity(enabled ? 1 : 0.5)
     }
 }

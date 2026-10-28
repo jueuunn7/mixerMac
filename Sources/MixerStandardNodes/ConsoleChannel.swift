@@ -44,6 +44,14 @@ public final class ConsoleChannel: Channel {
         return settings
     }
 
+    public func resetTone() {
+        var neutral = ChannelSettings()
+        neutral.volume = volume.value
+        neutral.isMuted = isMuted
+        neutral.isSolo = isSolo
+        updateSettings(neutral)
+    }
+
     public func updateSettings(_ settings: ChannelSettings) {
         performUpdate {
             equalizer.updateSettings(settings.eqSettings)

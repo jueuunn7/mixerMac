@@ -8,6 +8,25 @@ import SwiftUI
 @testable import mixerMac
 
 struct MasterDetailTests {
+    @Test @MainActor func consoleMasterResetRestoresAllToneControlsAndPersists() throws {
+        let domain = "mixerMac.MasterReset.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: domain))
+        defer { defaults.removePersistentDomain(forName: domain) }
+        let model = MixerConsoleModel(preferences: ConsolePreferences(defaults: defaults))
+        var edited = BusEQSettings()
+        edited.pan = -0.6
+        edited.width = 0.2
+        edited.gainDB = 8
+        edited.gains[5] = 10
+        edited.bandFrequencies[5] = 1234
+        edited.bandwidths[5] = 0.3
+        model.masterEQ = edited
+        model.core.master.resetTone()
+        #expect(model.masterEQ == BusEQSettings())
+        let restored = MixerConsoleModel(preferences: ConsolePreferences(defaults: defaults))
+        #expect(restored.masterEQ == BusEQSettings())
+    }
+
     @Test func eqFaderHasCenterZeroAndFullBipolarRange() {
         #expect(EQFaderScale.position(for: 0) == 0.5)
         #expect(EQFaderScale.position(for: 24) == 1)

@@ -60,10 +60,10 @@ private struct EQDetailView: View {
                 Spacer()
                 if let width { DetailWidthControl(value: width) }
                 DetailPanControl(value: $settings.pan)
-                Text(isMaster ? "GAIN" : "TRIM").font(.system(size: 10, weight: .bold))
+                Text("TRIM").font(.system(size: 10, weight: .bold))
                 DetailNumberField(value: Binding(get: { Double(settings.trimDB) }, set: {
                     guard $0.isFinite else { return }; settings.trimDB = Float(min(24, max(-24, $0)))
-                }), label: isMaster ? "Master gain" : "Channel trim", digits: 1).frame(width: 65)
+                }), label: isMaster ? "Master trim" : "Channel trim", digits: 1).frame(width: 65)
                 Text("dB").font(.system(size: 10)).foregroundStyle(.secondary)
             }
             DetailResponsePlot(settings: $settings, detail: detail, selectedBand: $selectedBand)

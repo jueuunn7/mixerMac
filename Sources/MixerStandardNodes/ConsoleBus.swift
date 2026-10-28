@@ -35,6 +35,10 @@ public final class ConsoleBus: MixBus {
         return settings
     }
 
+    public func resetTone() {
+        updateSettings(BusEQSettings())
+    }
+
     public func updateSettings(_ settings: BusEQSettings) {
         performUpdate {
             equalizer.updateSettings(settings.eqSettings)

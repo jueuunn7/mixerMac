@@ -8,6 +8,37 @@ import SwiftUI
 @testable import mixerMac
 
 struct ChannelDetailTests {
+    @Test @MainActor func consoleResetRestoresToneAndPersistsWithoutChangingMixState() throws {
+        let domain = "mixerMac.ResetTone.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: domain))
+        defer { defaults.removePersistentDomain(forName: domain) }
+        let app = AudioApp(id: "reset", name: "Reset", icon: nil, processes: [], isPlaying: false)
+        let channel = AppAudioChannel(app: app, defaults: defaults)
+        var edited = ChannelSettings()
+        edited.pan = 0.7
+        edited.width = 1.8
+        edited.trimDB = 9
+        edited.gains[3] = 12
+        edited.frequencies[3] = 333
+        edited.bandwidths[3] = 2
+        edited.volume = 0.4
+        edited.isMuted = true
+        edited.isSolo = true
+        channel.settings = edited
+        var updates = 0
+        let subscription = channel.core.changes.sink { _ in updates += 1 }
+        channel.core.resetTone()
+        var expected = ChannelSettings()
+        expected.volume = 0.4
+        expected.isMuted = true
+        expected.isSolo = true
+        #expect(channel.settings == expected)
+        #expect(updates == 1)
+        let restored = AppAudioChannel(app: app, defaults: defaults)
+        #expect(restored.settings == expected)
+        withExtendedLifetime(subscription) {}
+    }
+
     @Test @MainActor func signalHistoryPreservesPeaksAboveFullScale() throws {
         let format = try #require(AVAudioFormat(standardFormatWithSampleRate: 48_000, channels: 2))
         let buffer = try #require(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 4096))
