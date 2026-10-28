@@ -395,6 +395,11 @@ final class MixerConsoleModel: ObservableObject {
     let masterFeed = PCMFeed()
     private var masterCapture: (any AudioCapturing)?
     private let makeCapture: @MainActor (PCMFeed, [AudioObjectID]?) -> any AudioCapturing
+    private let processChannel: @MainActor (AppAudioChannel, OutputDevice) throws -> Void
+    private let discoverOwnProcesses: @MainActor () -> [AudioObjectID]
+    private var masterCaptureError: String?
+    private var mixingError: String?
+    private var channelErrors: [String: String] = [:]
     private var ticks = 0
     private var masterProcessIDs: [AudioObjectID] = []
     private let preferences: ConsolePreferences
@@ -403,11 +408,17 @@ final class MixerConsoleModel: ObservableObject {
     private var isShuttingDown = false
 
     init(preferences: ConsolePreferences = ConsolePreferences(),
+         processChannel: @escaping @MainActor (AppAudioChannel, OutputDevice) throws -> Void = {
+             try $0.process(output: $1)
+         },
+         discoverOwnProcesses: @escaping @MainActor () -> [AudioObjectID] = { AudioAppDiscovery.ownProcesses() },
          makeCapture: @escaping @MainActor (PCMFeed, [AudioObjectID]?) -> any AudioCapturing = {
              SystemAudioCapture(feed: $0, processes: $1)
          }) {
         self.preferences = preferences
         self.makeCapture = makeCapture
+        self.processChannel = processChannel
+        self.discoverOwnProcesses = discoverOwnProcesses
         preferredOutputUID = preferences.outputUID
         runRestoration = MixerRunRestoration(preferences: preferences)
         masterEQ = BusEQSettings.restored(defaults: preferences.defaults)
@@ -427,35 +438,49 @@ final class MixerConsoleModel: ObservableObject {
 
     func refresh() {
         guard !isShuttingDown else { return }
+        let devices = AudioDevices.all().filter { AudioDevices.isPhysicalOutput($0.id) }
+        refresh(apps: AudioAppDiscovery.apps(), devices: devices, defaultOutputID: AudioDevices.defaultOutput())
+    }
+
+    func refresh(apps: [AudioApp], devices: [OutputDevice], defaultOutputID: UInt32) {
+        guard !isShuttingDown else { return }
         if masterCapture == nil {
             let capture = makeCapture(masterFeed, nil)
             do {
                 try capture.start()
                 masterCapture = capture
-            } catch { capture.stop() }
+                masterCaptureError = nil
+            } catch {
+                capture.stop()
+                masterCaptureError = "Allow system audio access, then click Refresh"
+            }
         }
-        defer {
-            if masterCapture == nil { status = "Allow system audio access, then click Refresh" }
-        }
-        let allDevices = AudioDevices.all()
-        let devices = allDevices.filter { AudioDevices.isPhysicalOutput($0.id) }
-        restoreOutputSelection(devices: devices, defaultOutputID: AudioDevices.defaultOutput())
-        let detected = AudioAppDiscovery.apps()
-        for app in detected {
-            if let existing = channels.first(where: { $0.id == app.id }) { existing.update(app: app) }
-            else {
-                let channel = AppAudioChannel(app: app, defaults: preferences.defaults, makeCapture: makeCapture)
+        defer { updateStatus() }
+        restoreOutputSelection(devices: devices, defaultOutputID: defaultOutputID)
+        for app in apps {
+            let channel: AppAudioChannel
+            if let existing = channels.first(where: { $0.id == app.id }) {
+                channel = existing
+                channel.update(app: app)
+            } else {
+                channel = AppAudioChannel(app: app, defaults: preferences.defaults, makeCapture: makeCapture)
                 channels.append(channel)
                 channel.listen()
-                if isMixing, let output = outputs.first(where: { $0.id == outputID }) {
-                    do { try channel.process(output: output) }
-                    catch { stopMixing(preservingRunningPreference: true); status = "Could not connect \(app.name): \(error.localizedDescription)" }
+            }
+            if isMixing, !channel.isProcessing, let output = outputs.first(where: { $0.id == outputID }) {
+                do {
+                    try processChannel(channel, output)
+                    channelErrors.removeValue(forKey: channel.id)
+                } catch {
+                    channel.stopProcessing()
+                    channelErrors[channel.id] = "Could not connect \(app.name): \(error.localizedDescription)"
                 }
             }
         }
-        let ids = Set(detected.map(\.id))
+        let ids = Set(apps.map(\.id))
         for removed in channels where !ids.contains(removed.id) { removed.shutdown() }
         if channels.contains(where: { !ids.contains($0.id) }) { channels.removeAll { !ids.contains($0.id) } }
+        channelErrors = channelErrors.filter { ids.contains($0.key) }
         if !isMixing, runRestoration.takeStartupAttempt(
             hasOutput: outputs.contains(where: { $0.id == outputID }),
             hasApps: channels.contains(where: { !$0.app.processes.isEmpty })
@@ -463,20 +488,8 @@ final class MixerConsoleModel: ObservableObject {
             startMixing()
             return
         }
-        if isMixing {
-            let own = AudioAppDiscovery.ownProcesses()
-            if own != masterProcessIDs, !own.isEmpty {
-                do { try masterCapture?.setProcesses(own); masterProcessIDs = own }
-                catch { status = "Master meter could not reconnect" }
-            }
-            apply()
-        } else if !channels.isEmpty {
-            let text = "\(channels.count) audio apps detected · Power on to apply EQ, PAN and volume"
-            if status != text { status = text }
-        } else {
-            let text = "Play audio in an app to add its channel automatically"
-            if status != text { status = text }
-        }
+        updateMasterCaptureRouting()
+        if isMixing { apply() }
     }
 
     /// `devices` has already been restricted to physical outputs by discovery.
@@ -510,28 +523,63 @@ final class MixerConsoleModel: ObservableObject {
         isBusy = true
         defer { isBusy = false }
         do {
-            for channel in channels { try channel.process(output: output) }
+            for channel in channels { try processChannel(channel, output) }
             isMixing = true
+            mixingError = nil
+            channelErrors.removeAll()
             apply()
-            let own = AudioAppDiscovery.ownProcesses()
-            if !own.isEmpty { try masterCapture?.setProcesses(own); masterProcessIDs = own }
-            status = "Live · app EQ → \(output.name) · power off restores native app audio"
         } catch {
             for channel in channels { channel.stopProcessing() }
             isMixing = false
             apply()
-            status = "Mixer could not start: \(error.localizedDescription)"
+            mixingError = "Mixer could not start: \(error.localizedDescription)"
+            updateStatus()
+            return
         }
+        updateMasterCaptureRouting()
+        updateStatus()
     }
 
     func stopMixing(preservingRunningPreference: Bool = false) {
         if !preservingRunningPreference { runRestoration.explicitStop() }
         for channel in channels { channel.stopProcessing() }
         isMixing = false
-        try? masterCapture?.setProcesses(nil)
-        masterProcessIDs = []
+        mixingError = nil
+        channelErrors.removeAll()
+        updateMasterCaptureRouting()
         apply()
-        status = "Mixer stopped · original app playback restored"
+        updateStatus()
+    }
+
+    private func updateMasterCaptureRouting() {
+        guard let masterCapture else { return }
+        let own = isMixing ? discoverOwnProcesses() : []
+        guard !isMixing || !own.isEmpty else { return }
+        guard own != masterProcessIDs else {
+            masterCaptureError = nil
+            return
+        }
+        do {
+            try masterCapture.setProcesses(isMixing ? own : nil)
+            masterProcessIDs = own
+            masterCaptureError = nil
+        } catch { masterCaptureError = "Master meter could not reconnect" }
+    }
+
+    private func updateStatus() {
+        let errors = [mixingError, masterCaptureError].compactMap { $0 }
+            + channels.compactMap { channelErrors[$0.id] }
+        let text: String
+        if !errors.isEmpty {
+            text = errors.joined(separator: " · ")
+        } else if isMixing, let output = outputs.first(where: { $0.id == outputID }) {
+            text = "Live · app EQ → \(output.name) · power off restores native app audio"
+        } else if !channels.isEmpty {
+            text = "\(channels.count) audio apps detected · Power on to apply EQ, PAN and volume"
+        } else {
+            text = "Play audio in an app to add its channel automatically"
+        }
+        if status != text { status = text }
     }
 
     func saveMasterEQ() {
