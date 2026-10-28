@@ -372,7 +372,7 @@ struct ConsoleButton: View {
     let action: () -> Void
     var body: some View {
         Button(title, action: action)
-        .buttonStyle(ConsolePushButtonStyle(active: active, color: color, isToggle: true))
+        .buttonStyle(ConsolePushButtonStyle(active: active, color: color, symbol: String(title.prefix(1))))
         .accessibilityLabel(title)
         .accessibilityValue(active ? "On" : "Off")
         .help(title == "MUTE" ? "Mute channel" : "Solo channel")
@@ -391,21 +391,35 @@ private struct ConsoleButtonBank<Content: View>: View {
 private struct ConsolePushButtonStyle: ButtonStyle {
     var active = false
     var color = ConsolePalette.blue
-    var isToggle = false
+    var symbol: String?
     @Environment(\.isEnabled) private var enabled
 
     func makeBody(configuration: Configuration) -> some View {
-        HStack(spacing: 4) {
-            if isToggle {
-                Circle().fill(active ? color : Color(white: 0.35)).frame(width: 4, height: 4)
+        Group {
+            if let symbol {
+                ZStack {
+                    Circle()
+                        .fill(LinearGradient(colors: [Color(white: 0.28), Color(white: 0.06)], startPoint: .top, endPoint: .bottom))
+                        .overlay(Circle().stroke(active ? color : Color(white: 0.12), lineWidth: 2))
+                        .overlay(Circle().inset(by: 3).stroke(.white.opacity(0.12), lineWidth: 0.6))
+                        .shadow(color: .black.opacity(0.4), radius: 1, y: configuration.isPressed ? 0 : 1.5)
+                    Text(symbol).font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .foregroundStyle(active ? color : Color(white: 0.85))
+                }
+                .frame(width: 26, height: 26)
+                .offset(y: configuration.isPressed ? 1 : 0)
+                .frame(maxWidth: .infinity).frame(height: 32)
+            } else {
+                configuration.label
+                    .font(.system(size: 7, weight: .bold, design: .monospaced))
+                    .foregroundStyle(ConsolePalette.ink)
+                    .frame(maxWidth: .infinity).frame(height: 20)
+                    .background(LinearGradient(colors: [.white.opacity(0.12), .black.opacity(configuration.isPressed ? 0.14 : 0.04)], startPoint: .top, endPoint: .bottom))
+                    .overlay(RoundedRectangle(cornerRadius: 2).stroke(.black.opacity(0.3), lineWidth: 0.6))
+                    .clipShape(RoundedRectangle(cornerRadius: 2))
+                    .padding(.horizontal, 3)
             }
-            configuration.label
-                .font(.system(size: 8, weight: .bold, design: .monospaced))
         }
-        .frame(maxWidth: .infinity).frame(height: 28)
-        .foregroundStyle(isToggle ? (active ? color : Color(white: 0.9)) : ConsolePalette.ink)
-        .background(isToggle ? Color(white: configuration.isPressed ? 0.12 : 0.19) : Color.black.opacity(configuration.isPressed ? 0.16 : 0.045))
-        .overlay(Rectangle().stroke(active ? color : .black.opacity(0.3), lineWidth: 0.6))
         .contentShape(Rectangle())
         .opacity(enabled ? 1 : 0.5)
     }
