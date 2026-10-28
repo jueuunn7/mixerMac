@@ -7,7 +7,7 @@ struct MixerMacApp: App {
     init() { ConsolePreferences.migrateLegacySettings() }
 
     var body: some Scene {
-        WindowGroup("mixerMac") {
+        Window("mixerMac", id: "main") {
             MixerConsoleView()
                 .frame(minWidth: ConsoleLayout.minimumWindowWidth, minHeight: ConsoleLayout.windowHeight)
         }
