@@ -2,6 +2,25 @@ import Foundation
 import CoreAudio
 import AudioToolbox
 
+private final class AudioIOCallback: @unchecked Sendable {
+    private let feed: PCMFeed
+    private let receiver: (@Sendable (UnsafePointer<AudioBufferList>, Double) -> Void)?
+    private let sampleRate: Double
+
+    init(feed: PCMFeed, receiver: (@Sendable (UnsafePointer<AudioBufferList>, Double) -> Void)?, sampleRate: Double) {
+        self.feed = feed
+        self.receiver = receiver
+        self.sampleRate = sampleRate
+    }
+
+    nonisolated func handle(_ inputTime: UnsafePointer<AudioTimeStamp>, _ input: UnsafePointer<AudioBufferList>,
+                            _ outputTime: UnsafePointer<AudioTimeStamp>, _ output: UnsafeMutablePointer<AudioBufferList>,
+                            _ outputTime2: UnsafePointer<AudioTimeStamp>) {
+        feed.push(input, sampleRate: sampleRate)
+        receiver?(input, sampleRate)
+    }
+}
+
 @MainActor
 public protocol AudioCapturing {
     func start() throws
@@ -18,6 +37,7 @@ public final class SystemAudioCapture: AudioCapturing {
     private var tapID = AudioObjectID(kAudioObjectUnknown)
     private var deviceID = AudioObjectID(kAudioObjectUnknown)
     private var ioProc: AudioDeviceIOProcID?
+    private var callback: AudioIOCallback?
     private var description: CATapDescription?
     private let processes: [AudioObjectID]?
     private let receiver: (@Sendable (UnsafePointer<AudioBufferList>, Double) -> Void)?
@@ -66,10 +86,9 @@ public final class SystemAudioCapture: AudioCapturing {
             try check(AudioHardwareCreateAggregateDevice(aggregate as CFDictionary, &deviceID), "Create private analyzer")
             let rate = format.mSampleRate
             self.sampleRate = rate
-            try check(AudioDeviceCreateIOProcIDWithBlock(&ioProc, deviceID, nil) { [feed, receiver] _, input, _, _, _ in
-                feed.push(input, sampleRate: rate)
-                receiver?(input, rate)
-            }, "Connect playback analyzer")
+            let callback = AudioIOCallback(feed: feed, receiver: receiver, sampleRate: rate)
+            self.callback = callback
+            try check(AudioDeviceCreateIOProcIDWithBlock(&ioProc, deviceID, nil, callback.handle), "Connect playback analyzer")
             feed.reset()
             try check(AudioDeviceStart(deviceID, ioProc), "Start playback analyzer")
         } catch {
@@ -105,6 +124,7 @@ public final class SystemAudioCapture: AudioCapturing {
             AudioDeviceDestroyIOProcID(deviceID, ioProc)
         }
         ioProc = nil
+        callback = nil
         if deviceID != kAudioObjectUnknown { AudioHardwareDestroyAggregateDevice(deviceID) }
         if tapID != kAudioObjectUnknown { AudioHardwareDestroyProcessTap(tapID) }
         deviceID = AudioObjectID(kAudioObjectUnknown)

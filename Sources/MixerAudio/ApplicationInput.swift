@@ -28,19 +28,14 @@ private final class ApplicationAudioSource: AudioSource {
     override func prepareResources() throws -> AudioEndpoint {
         let bridge = try DriverAudioBridge(inputFeed: input.feed, rate: 48_000)
         self.bridge = bridge
-        let capture = SystemAudioCapture(feed: input.feed, processes: input.app.processes) { buffers, _ in
-            mixerMacFIFOWrite(bridge.fifo, buffers)
-        }
+        let capture = SystemAudioCapture(feed: input.feed, processes: input.app.processes, receiver: bridge.write)
         self.capture = capture
         try capture.start()
         processes = input.app.processes
         guard let format = AVAudioFormat(standardFormatWithSampleRate: capture.sampleRate, channels: 2) else {
             throw AudioSourceError.incompatibleSource(input.id)
         }
-        let source = AVAudioSourceNode(format: format) { _, _, frames, buffers in
-            bridge.render(frames, buffers: buffers)
-            return noErr
-        }
+        let source = AVAudioSourceNode(format: format, renderBlock: bridge.render)
         return AudioEndpoint(source)
     }
 
