@@ -1,5 +1,6 @@
 @testable import MixerAudio
 import MixerCore
+import MixerStandardNodes
 import Testing
 import Foundation
 @preconcurrency import AVFAudio

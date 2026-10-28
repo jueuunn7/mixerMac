@@ -1,5 +1,6 @@
 import MixerAudio
 import MixerCore
+import MixerStandardNodes
 import SwiftUI
 import AppKit
 

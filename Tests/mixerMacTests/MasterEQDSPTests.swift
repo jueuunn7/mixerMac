@@ -1,5 +1,6 @@
 @testable import MixerAudio
 import MixerCore
+import MixerStandardNodes
 import Testing
 import Foundation
 @preconcurrency import AVFAudio
@@ -29,35 +30,10 @@ struct MasterEQDSPTests {
 
     @Test(arguments: [Float(-24), 0, 24]) @MainActor
     func masterGainChangesRenderedAudio(gainDB: Float) throws {
-        let processor = AppChannelProcessor()
         var master = BusEQSettings()
         master.gainDB = gainDB
-        processor.apply(ChannelSettings(), audible: true, master: 1, sampleRate: 48_000, masterEQ: master)
-        let format = try #require(AVAudioFormat(standardFormatWithSampleRate: 48_000, channels: 2))
-        let source = try #require(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 4096))
-        source.frameLength = 4096
-        let samples = try #require(source.floatChannelData)
-        for channel in 0..<2 {
-            for frame in 0..<4096 { samples[channel][frame] = 0.01 * Float(sin(2 * Double.pi * Double(frame) / 32)) }
-        }
-        let engine = AVAudioEngine()
-        let player = AVAudioPlayerNode()
-        engine.attach(player)
-        engine.attach(processor.masterEQ)
-        engine.connect(player, to: processor.masterEQ, format: format)
-        engine.connect(processor.masterEQ, to: engine.mainMixerNode, format: format)
-        try engine.enableManualRenderingMode(.offline, format: format, maximumFrameCount: 4096)
-        let output = try #require(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 4096))
-        try engine.start()
-        defer { engine.stop() }
-        player.scheduleBuffer(source, at: nil, options: .loops)
-        player.play()
-        for _ in 0..<5 { #expect(try engine.renderOffline(4096, to: output) == .success) }
-        let rendered = try #require(output.floatChannelData)
-        for channel in 0..<2 {
-            let peak = (0..<4096).map { abs(rendered[channel][$0]) }.max() ?? 0
-            #expect(abs(20 * log10(peak / 0.01) - gainDB) < 0.05)
-        }
+        let peak = try renderedConsolePeak(master: master, frequency: 1500, amplitude: 0.01)
+        #expect(abs(20 * log10(peak / 0.01) - gainDB) < 0.05)
     }
 
     @Test @MainActor func masterBandsMatchAppEQ() {

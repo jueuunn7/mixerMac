@@ -1,4 +1,5 @@
 import MixerCore
+import MixerStandardNodes
 import Foundation
 import CoreAudio
 import AudioToolbox

@@ -1,4 +1,5 @@
 import MixerCore
+import MixerStandardNodes
 @preconcurrency import AVFAudio
 
 public extension ChannelSettings {

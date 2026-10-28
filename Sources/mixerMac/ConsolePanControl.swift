@@ -1,4 +1,5 @@
 import MixerCore
+import MixerStandardNodes
 import SwiftUI
 
 struct ConsolePanControl: View {

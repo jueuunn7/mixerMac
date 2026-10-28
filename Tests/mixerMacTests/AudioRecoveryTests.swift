@@ -29,20 +29,6 @@ final class TestAudioCapture: AudioCapturing {
     func stop() { stops += 1 }
 }
 
-@MainActor
-private final class TestChannelProcessing {
-    var failingIDs: Set<String> = []
-    var ownProcesses: [AudioObjectID] = [99]
-    private(set) var starts: [String] = []
-
-    func start(_ channel: AppAudioChannel, output: OutputDevice) throws {
-        starts.append(channel.id)
-        if failingIDs.contains(channel.id) { throw TestAudioCapture.Failure.unavailable }
-        channel.isProcessing = true
-        channel.message = "LIVE"
-    }
-}
-
 struct AudioRecoveryTests {
     @MainActor
     private func withMixer(_ test: (MixerConsoleModel, TestAudioCapture, TestChannelProcessing) throws -> Void) throws {
@@ -52,7 +38,7 @@ struct AudioRecoveryTests {
         let capture = TestAudioCapture()
         let processing = TestChannelProcessing()
         let model = MixerConsoleModel(preferences: ConsolePreferences(defaults: defaults),
-            processChannel: processing.start,
+            sources: try processing.registry(), audioOutput: processing.output,
             discoverOwnProcesses: { processing.ownProcesses },
             makeCapture: { _, _ in capture })
         defer { model.shutdown() }
@@ -133,6 +119,20 @@ struct AudioRecoveryTests {
             model.toggleMixing()
             #expect(model.isMixing)
             #expect(!model.status.contains("Mixer could not start"))
+        }
+    }
+
+    @Test @MainActor func unrecoverableOutputFailureClearsLiveStateForEveryChannel() throws {
+        try withMixer { model, _, processing in
+            refresh(model, appIDs: ["first"])
+            model.toggleMixing()
+            #expect(model.isMixing)
+            processing.output.failingStarts = 3
+            refresh(model, appIDs: ["first", "second"])
+            #expect(!model.isMixing)
+            #expect(!model.playback.isRunning)
+            #expect(model.channels.allSatisfy { !$0.isProcessing })
+            #expect(model.status.contains("Could not connect") || model.status.contains("Could not update mixer routing"))
         }
     }
 

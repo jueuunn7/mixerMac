@@ -1,5 +1,6 @@
 @testable import MixerAudio
 import MixerCore
+import MixerStandardNodes
 import Foundation
 import Testing
 @testable import mixerMac
@@ -118,10 +119,11 @@ struct ConsolePersistenceTests {
             let app = AudioApp(id: "test.unity", name: "Test", icon: nil, processes: [], isPlaying: false)
             model.refresh(apps: [app], devices: [], defaultOutputID: 0)
             let channel = try #require(model.channels.first)
-            #expect(abs(channel.processor.levelControl.globalGain) < 0.0001)
+            let measuredPeak1 = try renderedConsolePeak(settings: channel.settings, master: model.masterEQ)
+            #expect(abs(measuredPeak1 - 0.1) < 0.001)
             channel.settings.volume = 0.5
-            #expect(abs(channel.processor.levelControl.globalGain - 20 * log10(Float(0.5))) < 0.0001)
-            #expect(channel.processor.masterEQ.bands.count == BusEQSettings.frequencies.count)
+            let measuredPeak2 = try renderedConsolePeak(settings: channel.settings, master: model.masterEQ)
+            #expect(abs(measuredPeak2 - 0.05) < 0.001)
         }
     }
 
@@ -129,8 +131,9 @@ struct ConsolePersistenceTests {
         try withDefaults { defaults in
             let preferences = ConsolePreferences(defaults: defaults)
             preferences.saveMixerRunning(true)
+            let processing = TestChannelProcessing()
             let model = MixerConsoleModel(preferences: preferences,
-                processChannel: { channel, _ in channel.isProcessing = true },
+                sources: try processing.registry(), audioOutput: processing.output,
                 discoverOwnProcesses: { [99] }, makeCapture: { _, _ in TestAudioCapture() })
             let app = AudioApp(id: "shutdown.test", name: "Test", icon: nil, processes: [11], isPlaying: false)
             model.refresh(apps: [app], devices: [OutputDevice(id: 42, name: "Test", uid: "test-output")], defaultOutputID: 42)

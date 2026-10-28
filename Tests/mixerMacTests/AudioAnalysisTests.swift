@@ -1,5 +1,6 @@
 @testable import MixerAudio
 import MixerCore
+import MixerStandardNodes
 import Testing
 import Foundation
 @preconcurrency import AVFAudio
@@ -139,67 +140,22 @@ struct AudioAnalysisTests {
     }
 
     @Test @MainActor func appEQChannelsDoNotAffectEachOther() throws {
-        let first = AppChannelProcessor()
-        let second = AppChannelProcessor()
         var cut = ChannelSettings()
-        cut.gains[5] = -12 // Only app A cuts 1 kHz.
-        first.apply(cut, audible: true, master: 1, sampleRate: 48_000)
-        second.apply(ChannelSettings(), audible: true, master: 1, sampleRate: 48_000)
-
-        func render(_ eq: AVAudioUnitEQ) throws -> Float {
-            // An integer number of cycles avoids an artificial click at loop boundaries.
-            let source = try tone(amplitude: 0.1, frequency: 48_000.0 * 85 / 4096)
-            let engine = AVAudioEngine()
-            let player = AVAudioPlayerNode()
-            engine.attach(player)
-            engine.attach(eq)
-            engine.connect(player, to: eq, format: source.format)
-            engine.connect(eq, to: engine.mainMixerNode, format: source.format)
-            try engine.enableManualRenderingMode(.offline, format: source.format, maximumFrameCount: 4096)
-            let buffer = try #require(AVAudioPCMBuffer(pcmFormat: source.format, frameCapacity: 4096))
-            try engine.start()
-            defer { engine.stop(); engine.detach(eq) }
-            player.scheduleBuffer(source, at: nil, options: .loops)
-            player.play()
-            for _ in 0..<5 { #expect(try engine.renderOffline(4096, to: buffer) == .success) }
-            let feed = PCMFeed()
-            feed.push(buffer)
-            return try #require(feed.snapshot()).peak
-        }
-        let firstPeak = try render(first.eq)
-        let secondPeak = try render(second.eq)
+        cut.gains[5] = -12
+        let firstPeak = try renderedConsolePeak(settings: cut)
+        let secondPeak = try renderedConsolePeak()
         #expect(abs(20 * log10(secondPeak / firstPeak) - 12) < 0.2)
         #expect(abs(secondPeak - 0.1) < 0.002)
     }
 
     @Test(arguments: [false, true]) @MainActor
     func faderAttenuationTrimAndEQRemainIndependent(eqEnabled: Bool) throws {
-        let processor = AppChannelProcessor()
         var settings = ChannelSettings()
         settings.eqEnabled = eqEnabled
         settings.gains[5] = 6
         settings.trimDB = 3
         settings.volume = 0.5
-        processor.apply(settings, audible: true, master: 1, sampleRate: 48_000)
-        let source = try tone(amplitude: 0.1, frequency: 48_000.0 * 85 / 4096)
-        let engine = AVAudioEngine()
-        let player = AVAudioPlayerNode()
-        engine.attach(player)
-        engine.attach(processor.eq)
-        engine.attach(processor.levelControl)
-        engine.connect(player, to: processor.eq, format: source.format)
-        engine.connect(processor.eq, to: processor.levelControl, format: source.format)
-        engine.connect(processor.levelControl, to: engine.mainMixerNode, format: source.format)
-        try engine.enableManualRenderingMode(.offline, format: source.format, maximumFrameCount: 4096)
-        let buffer = try #require(AVAudioPCMBuffer(pcmFormat: source.format, frameCapacity: 4096))
-        try engine.start()
-        defer { engine.stop() }
-        player.scheduleBuffer(source, at: nil, options: .loops)
-        player.play()
-        for _ in 0..<5 { #expect(try engine.renderOffline(4096, to: buffer) == .success) }
-        let feed = PCMFeed()
-        feed.push(buffer)
-        let peak = try #require(feed.snapshot()).peak
+        let peak = try renderedConsolePeak(settings: settings)
         let expectedDB: Float = (eqEnabled ? 9 : 3) + 20 * log10(Float(0.5))
         #expect(abs(20 * log10(peak / 0.1) - expectedDB) < 0.05)
     }
@@ -213,32 +169,13 @@ struct AudioAnalysisTests {
         #expect(!settings.eqEnabled)
     }
 
-    @Test(arguments: [0, 10]) @MainActor
-    func channelEQOutputRetainsInputLevelWithFaderDown(bands: Int) throws {
-        let processor = AppChannelProcessor(numberOfBands: bands)
+    @Test(arguments: [false, true]) @MainActor
+    func channelEQOutputRetainsInputLevelWithFaderDown(eqEnabled: Bool) throws {
         var settings = ChannelSettings()
-        if bands == 0 { settings.gains = [Float](repeating: 12, count: 10) }
+        settings.eqEnabled = eqEnabled
         settings.trimDB = 6
         settings.volume = 0.01
-        processor.apply(settings, audible: true, master: 0.1, sampleRate: 48_000)
-        let source = try tone(amplitude: 0.1, frequency: 48_000.0 * 85 / 4096)
-        let engine = AVAudioEngine()
-        let player = AVAudioPlayerNode()
-        engine.attach(player)
-        engine.attach(processor.eq)
-        // Render exactly the EQ output used by the pre-fader meter tap.
-        engine.connect(player, to: processor.eq, format: source.format)
-        engine.connect(processor.eq, to: engine.mainMixerNode, format: source.format)
-        try engine.enableManualRenderingMode(.offline, format: source.format, maximumFrameCount: 4096)
-        let buffer = try #require(AVAudioPCMBuffer(pcmFormat: source.format, frameCapacity: 4096))
-        try engine.start()
-        defer { engine.stop() }
-        player.scheduleBuffer(source, at: nil, options: .loops)
-        player.play()
-        for _ in 0..<5 { #expect(try engine.renderOffline(4096, to: buffer) == .success) }
-        let feed = PCMFeed()
-        feed.push(buffer)
-        let peak = try #require(feed.snapshot()).peak
+        let peak = try renderedConsolePeak(settings: settings, preFader: true)
         #expect(abs(20 * log10(peak / 0.1) - 6) < 0.05)
     }
 
@@ -250,52 +187,14 @@ struct AudioAnalysisTests {
 
     @Test(arguments: [true, false], Array(BusEQSettings.frequencies.indices)) @MainActor
     func masterEQProcessesOutputAndLeavesChannelMeterUnchanged(enabled: Bool, band: Int) throws {
-        let processor = AppChannelProcessor()
-        let secondProcessor = AppChannelProcessor()
         var master = BusEQSettings()
         master.enabled = enabled
         master.gains[band] = 6
-        processor.apply(ChannelSettings(), audible: true, master: 1, sampleRate: 48_000, masterEQ: master)
-        secondProcessor.apply(ChannelSettings(), audible: true, master: 1, sampleRate: 48_000, masterEQ: master)
-
-        func render(_ processor: AppChannelProcessor, throughMaster: Bool) throws -> Float {
-            // More cycles resolve the lowest bands. Whole cycles keep the loop seamless.
-            let frames = 16384
-            let frequency = (Double(BusEQSettings.frequencies[band]) * Double(frames) / 48_000).rounded() * 48_000 / Double(frames)
-            let source = try tone(amplitude: 0.1, frequency: frequency, frames: frames)
-            let engine = AVAudioEngine()
-            let player = AVAudioPlayerNode()
-            engine.attach(player)
-            engine.attach(processor.eq)
-            engine.connect(player, to: processor.eq, format: source.format)
-            if throughMaster {
-                engine.attach(processor.levelControl)
-                engine.attach(processor.masterEQ)
-                engine.connect(processor.eq, to: processor.levelControl, format: source.format)
-                engine.connect(processor.levelControl, to: processor.masterEQ, format: source.format)
-                engine.connect(processor.masterEQ, to: engine.mainMixerNode, format: source.format)
-            } else {
-                engine.connect(processor.eq, to: engine.mainMixerNode, format: source.format)
-            }
-            let frameCount = AVAudioFrameCount(frames)
-            try engine.enableManualRenderingMode(.offline, format: source.format, maximumFrameCount: frameCount)
-            let buffer = try #require(AVAudioPCMBuffer(pcmFormat: source.format, frameCapacity: frameCount))
-            try engine.start()
-            defer {
-                engine.stop()
-                engine.detach(processor.eq)
-                if throughMaster { engine.detach(processor.levelControl); engine.detach(processor.masterEQ) }
-            }
-            player.scheduleBuffer(source, at: nil, options: .loops)
-            player.play()
-            for _ in 0..<5 { #expect(try engine.renderOffline(frameCount, to: buffer) == .success) }
-            let feed = PCMFeed()
-            feed.push(buffer)
-            return try #require(feed.snapshot()).peak
-        }
-        let output = try render(processor, throughMaster: true)
-        let secondOutput = try render(secondProcessor, throughMaster: true)
-        let channel = try render(processor, throughMaster: false)
+        let frames = 16384
+        let frequency = (Double(BusEQSettings.frequencies[band]) * Double(frames) / 48_000).rounded() * 48_000 / Double(frames)
+        let output = try renderedConsolePeak(master: master, frequency: frequency, frames: frames)
+        let secondOutput = try renderedConsolePeak(master: master, frequency: frequency, frames: frames)
+        let channel = try renderedConsolePeak(master: master, preFader: true, frequency: frequency, frames: frames)
         #expect(abs(20 * log10(output / 0.1) - (enabled ? 6 : 0)) < 0.15)
         #expect(abs(20 * log10(secondOutput / output)) < 0.01)
         #expect(abs(20 * log10(channel / 0.1)) < 0.05)

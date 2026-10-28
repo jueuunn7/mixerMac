@@ -1,4 +1,5 @@
 import MixerCore
+import MixerStandardNodes
 
 extension BusEQSettings {
     var detailSettings: ChannelSettings {

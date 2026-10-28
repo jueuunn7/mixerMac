@@ -1,6 +1,7 @@
 import Combine
 import Foundation
 import MixerCore
+import MixerStandardNodes
 import Testing
 
 struct MixerCoreTests {
@@ -19,8 +20,8 @@ struct MixerCoreTests {
     }
 
     @Test @MainActor func twoControlsShareOneParameterAndChannelsStayIndependent() {
-        let first = Channel(id: "first")
-        let second = Channel(id: "second")
+        let first = ConsoleChannel(id: "first")
+        let second = ConsoleChannel(id: "second")
         let knob = first.equalizer.bands[5].gain
         let numberEditor = first.equalizer.bands[5].gain
         #expect(knob === numberEditor)
@@ -33,10 +34,10 @@ struct MixerCoreTests {
     }
 
     @Test @MainActor func replacingSettingsPreservesParametersAndPublishesOneCompleteSnapshot() {
-        let channel = Channel(id: "test")
+        let channel = ConsoleChannel(id: "test")
         let parameter = channel.equalizer.bands[5].gain
         var observed: [ChannelSettings] = []
-        let subscription = channel.changes.sink { observed.append(channel.settings) }
+        let subscription = channel.changes.sink { _ in observed.append(channel.settings) }
         var settings = ChannelSettings()
         settings.gains[5] = 7.3
         settings.frequencies[5] = 1234.5
@@ -53,9 +54,9 @@ struct MixerCoreTests {
     }
 
     @Test @MainActor func mixerOwnsMuteSoloAndChannelMembership() {
-        let first = Channel(id: "first")
-        let second = Channel(id: "second")
-        let mixer = Mixer(channels: [first])
+        let first = ConsoleChannel(id: "first")
+        let second = ConsoleChannel(id: "second")
+        let mixer = ConsoleMixer(channels: [first])
         mixer.addChannel(second)
         #expect(mixer.audibleChannelIDs == Set(["first", "second"]))
         first.setSolo(true)
@@ -71,9 +72,9 @@ struct MixerCoreTests {
     }
 
     @Test @MainActor func removedChannelsNoLongerNotifyTheMixer() {
-        let old = Channel(id: "same")
-        let replacement = Channel(id: "same")
-        let mixer = Mixer(channels: [old])
+        let old = ConsoleChannel(id: "same")
+        let replacement = ConsoleChannel(id: "same")
+        let mixer = ConsoleMixer(channels: [old])
         var changes: [MixerChange] = []
         let subscription = mixer.changes.sink { changes.append($0) }
         mixer.replaceChannels([replacement])
@@ -86,8 +87,8 @@ struct MixerCoreTests {
     }
 
     @Test @MainActor func masterParametersStayIndependentAndPublishOneBatch() {
-        let channel = Channel(id: "first")
-        let mixer = Mixer(channels: [channel])
+        let channel = ConsoleChannel(id: "first")
+        let mixer = ConsoleMixer(channels: [channel])
         let width = mixer.master.width
         var changes: [MixerChange] = []
         let subscription = mixer.changes.sink { changes.append($0) }
@@ -111,8 +112,8 @@ struct MixerCoreTests {
             from: Data(#"{"gains":[0,0,0,0,0,3.5,0,0,0,0],"volume":0.7,"eqEnabled":true}"#.utf8))
         let masterSettings = try JSONDecoder().decode(BusEQSettings.self,
             from: Data(#"{"gains":[-6,3,9,-3]}"#.utf8))
-        let channel = Channel(id: "input", settings: channelSettings)
-        let mixer = Mixer(channels: [channel], masterSettings: masterSettings)
+        let channel = ConsoleChannel(id: "input", settings: channelSettings)
+        let mixer = ConsoleMixer(channels: [channel], masterSettings: masterSettings)
         #expect(channel.settings == channelSettings)
         #expect(mixer.master.settings == masterSettings)
         let reopened = try JSONDecoder().decode(ChannelSettings.self,
@@ -121,10 +122,10 @@ struct MixerCoreTests {
     }
 
     @Test @MainActor func releasingMixerDoesNotLeaveAChannelSubscription() {
-        let channel = Channel(id: "input")
-        weak var released: Mixer?
+        let channel = ConsoleChannel(id: "input")
+        weak var released: ConsoleMixer?
         do {
-            let mixer = Mixer(channels: [channel])
+            let mixer = ConsoleMixer(channels: [channel])
             released = mixer
         }
         #expect(released == nil)
