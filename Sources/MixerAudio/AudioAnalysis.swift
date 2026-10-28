@@ -4,24 +4,24 @@ import AudioToolbox
 import mixerMacDSP
 @preconcurrency import AVFAudio
 
-struct PCMFrame: Sendable {
-    let left: [Float]
-    let right: [Float]
-    let sampleRate: Double
-    let peak: Float
-    let leftPeak: Float
-    let rightPeak: Float
-    let sequence: UInt64
+public struct PCMFrame: Sendable {
+    public let left: [Float]
+    public let right: [Float]
+    public let sampleRate: Double
+    public let peak: Float
+    public let leftPeak: Float
+    public let rightPeak: Float
+    public let sequence: UInt64
 }
 
 // Native storage makes capture callbacks bounded and allocation-free.
 // The C side uses a nonblocking try flag; analysis packets may be dropped,
 // but the separate playback FIFO is never delayed by graph drawing.
-final class PCMFeed: @unchecked Sendable {
-    static let capacity = 4096
+public final class PCMFeed: @unchecked Sendable {
+    public static let capacity = 4096
     private let state: OpaquePointer
 
-    init() {
+    public init() {
         guard let state = mixerMacAnalysisCreate() else {
             preconditionFailure("Unable to allocate analysis storage")
         }
@@ -30,16 +30,16 @@ final class PCMFeed: @unchecked Sendable {
 
     deinit { mixerMacAnalysisDestroy(state) }
 
-    func push(_ buffer: AVAudioPCMBuffer) {
+    public func push(_ buffer: AVAudioPCMBuffer) {
         guard buffer.format.commonFormat == .pcmFormatFloat32 else { return }
         mixerMacAnalysisPush(state, buffer.audioBufferList, buffer.format.sampleRate)
     }
 
-    func push(_ input: UnsafePointer<AudioBufferList>, sampleRate: Double) {
+    public func push(_ input: UnsafePointer<AudioBufferList>, sampleRate: Double) {
         mixerMacAnalysisPush(state, input, sampleRate)
     }
 
-    func snapshot(includeSamples: Bool = true, consumingPeaks: Bool = true) -> PCMFrame? {
+    public func snapshot(includeSamples: Bool = true, consumingPeaks: Bool = true) -> PCMFrame? {
         var rate = 0.0
         var peak: Float = 0
         var leftPeak: Float = 0
@@ -62,14 +62,14 @@ final class PCMFeed: @unchecked Sendable {
         return PCMFrame(left: left, right: right, sampleRate: rate, peak: peak, leftPeak: leftPeak, rightPeak: rightPeak, sequence: sequence)
     }
 
-    func reset() { mixerMacAnalysisReset(state) }
+    public func reset() { mixerMacAnalysisReset(state) }
 }
 
 // A 4096-point Hann-windowed FFT, normalized to peak dBFS for a full-scale sine.
 // Stereo power is averaged after FFT, so opposite-phase channels do not cancel.
-final class SpectrumAnalyzer {
-    static let pointCount = 128
-    static let floorDB: Float = -90
+public final class SpectrumAnalyzer {
+    public static let pointCount = 128
+    public static let floorDB: Float = -90
     private let size = PCMFeed.capacity
     private let log2Size: vDSP_Length = 12
     private let setup: FFTSetup
@@ -79,7 +79,7 @@ final class SpectrumAnalyzer {
     private var imaginary = [Float](repeating: 0, count: PCMFeed.capacity)
     private var power = [Float](repeating: 0, count: PCMFeed.capacity / 2 + 1)
 
-    init() {
+    public init() {
         guard let setup = vDSP_create_fftsetup(12, FFTRadix(kFFTRadix2)) else {
             preconditionFailure("Unable to allocate FFT setup")
         }
@@ -93,7 +93,7 @@ final class SpectrumAnalyzer {
 
     deinit { vDSP_destroy_fftsetup(setup) }
 
-    func analyze(_ frame: PCMFrame) -> [Float] {
+    public func analyze(_ frame: PCMFrame) -> [Float] {
         guard frame.left.count == size, frame.right.count == size, frame.sampleRate > 0 else {
             return [Float](repeating: Self.floorDB, count: Self.pointCount)
         }
@@ -126,7 +126,7 @@ final class SpectrumAnalyzer {
         }
     }
 
-    static func meterLevel(_ peak: Float) -> Float {
+    public static func meterLevel(_ peak: Float) -> Float {
         let decibels = 20 * log10(max(peak, 0.000_001))
         return min(1, max(0, (decibels + 60) / 60))
     }

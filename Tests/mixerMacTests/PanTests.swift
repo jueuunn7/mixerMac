@@ -1,3 +1,5 @@
+@testable import MixerAudio
+import MixerCore
 import Testing
 import Foundation
 @preconcurrency import AVFAudio
@@ -65,6 +67,6 @@ struct PanTests {
         #expect(restored.settings.pan == -0.65)
         #expect(restored.settings.volume == 1)
         let legacy = Data(#"{"gains":[0,0,0,0,0,0,0,0,0,0],"volume":1,"eqEnabled":true}"#.utf8)
-        #expect(try JSONDecoder().decode(AppChannelSettings.self, from: legacy).pan == 0)
+        #expect(try JSONDecoder().decode(ChannelSettings.self, from: legacy).pan == 0)
     }
 }

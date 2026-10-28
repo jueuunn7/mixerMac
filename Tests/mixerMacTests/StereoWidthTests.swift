@@ -1,3 +1,5 @@
+@testable import MixerAudio
+import MixerCore
 import Testing
 import Foundation
 @preconcurrency import AVFAudio

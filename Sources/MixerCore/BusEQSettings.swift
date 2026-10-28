@@ -1,23 +1,22 @@
 import Foundation
-@preconcurrency import AVFAudio
 
-struct BusEQSettings: Codable, Equatable {
-    static let frequencies: [Float] = [31.5, 63, 125, 250, 500, 1000, 2000, 4000, 8000, 16000]
-    static let labels = ["31.5", "63", "125", "250", "500", "1k", "2k", "4k", "8k", "16k"]
-    var gains = [Float](repeating: 0, count: frequencies.count)
-    var bandFrequencies = Self.frequencies
-    var bandwidths = [Float](repeating: 1, count: frequencies.count)
-    var gainDB: Float = 0
-    var pan: Float = 0
-    var width: Float = 1
+public struct BusEQSettings: Codable, Equatable {
+    public static let frequencies = EQSettings.frequencies
+    public static let labels = EQSettings.labels
+    public var gains = [Float](repeating: 0, count: frequencies.count)
+    public var bandFrequencies = Self.frequencies
+    public var bandwidths = [Float](repeating: 1, count: frequencies.count)
+    public var gainDB: Float = 0
+    public var pan: Float = 0
+    public var width: Float = 1
     // Retained for backend bypass tests; restored public settings always enable EQ.
-    var enabled = true
+    public var enabled = true
 
-    init() {}
+    public init() {}
 
     private enum CodingKeys: String, CodingKey { case gains, bandFrequencies, bandwidths, gainDB, pan, width, enabled }
 
-    init(from decoder: Decoder) throws {
+    public init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         let saved = try values.decode([Float].self, forKey: .gains)
         switch saved.count {
@@ -43,36 +42,8 @@ struct BusEQSettings: Codable, Equatable {
         }
     }
 
-    static func restored(defaults: UserDefaults = .standard) -> BusEQSettings {
-        guard let data = defaults.data(forKey: "master.eq"),
-              var saved = try? JSONDecoder().decode(Self.self, from: data) else { return Self() }
-        saved.enabled = true
-        return saved
-    }
-
     private static func clampedGain(_ gain: Float) -> Float {
         gain.isFinite ? min(24, max(-24, gain)) : 0
-    }
-
-    var detailSettings: AppChannelSettings {
-        get {
-            var settings = AppChannelSettings()
-            settings.gains = gains
-            settings.frequencies = bandFrequencies
-            settings.bandwidths = bandwidths
-            settings.trimDB = Self.clampedGain(gainDB)
-            settings.pan = pan
-            settings.eqEnabled = enabled
-            return settings
-        }
-        set {
-            gains = newValue.gains.map(Self.clampedGain)
-            bandFrequencies = newValue.frequencies
-            bandwidths = newValue.bandwidths
-            gainDB = Self.clampedGain(newValue.trimDB)
-            pan = PanBalance.clamped(newValue.pan)
-            enabled = true
-        }
     }
 
     /// Approximate the old tonal curve, rather than dropping its settings or
@@ -94,26 +65,8 @@ struct BusEQSettings: Codable, Equatable {
         }
     }
 
-    static func configure(_ eq: AVAudioUnitEQ) {
-        precondition(eq.bands.count == frequencies.count, "Master EQ must have ten bands")
-        for index in eq.bands.indices {
-            eq.bands[index].frequency = frequencies[index]
-            eq.bands[index].bandwidth = 1
-            eq.bands[index].filterType = .parametric
-            eq.bands[index].bypass = false
-        }
-    }
-
-    func apply(to eq: AVAudioUnitEQ) {
-        precondition(eq.bands.count == Self.frequencies.count && gains.count == Self.frequencies.count,
-                     "Master EQ must have ten bands and ten gains")
-        for index in eq.bands.indices {
-            eq.bands[index].gain = Self.clampedGain(gains[index])
-            eq.bands[index].frequency = bandFrequencies[index]
-            eq.bands[index].bandwidth = bandwidths[index]
-        }
-        // No automatic headroom: a boost remains a boost in the rendered output.
-        eq.globalGain = Self.clampedGain(gainDB)
-        eq.bypass = !enabled
+    public var eqSettings: EQSettings {
+        EQSettings(gains: gains, frequencies: bandFrequencies, bandwidths: bandwidths,
+            gainDB: Self.clampedGain(gainDB), enabled: enabled)
     }
 }

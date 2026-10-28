@@ -111,13 +111,18 @@ The Swift suite covers EQ, rendered master gain, meters, stereo controls, persis
 
 | Location | Purpose |
 | --- | --- |
-| `Sources/mixerMac/` | SwiftUI console, Core Audio capture, channel discovery, EQ, and analysis |
+| `Sources/MixerCore/` | Source-independent mixer, channels, master bus, parameters, and settings |
+| `Sources/MixerAudio/` | Core Audio capture, app discovery, playback, EQ adapters, and analysis |
+| `Sources/mixerMac/` | SwiftUI console and application coordination |
 | `Sources/mixerMacDSP/` | Native audio bridge, buffering, and sample processing |
-| `Tests/mixerMacTests/` | Swift tests |
+| `Tests/MixerCoreTests/` | Headless core behavior and ownership tests |
+| `Tests/mixerMacTests/` | Audio, persistence, recovery, and core integration tests |
 | `Resources/` | App icon artwork and macOS icon bundle |
 | `docs/assets/` | Logo and screenshots used in this README |
 | `Driver/` | Optional experimental virtual audio driver and native tests |
 | `script/` | Build, test, packaging, and icon rendering helpers |
+
+See [the architecture guide](docs/architecture.md) for module responsibilities and headless verification.
 
 ### Release packaging
 

@@ -1,3 +1,5 @@
+import MixerAudio
+import MixerCore
 import SwiftUI
 import AppKit
 
@@ -56,7 +58,7 @@ struct MixerConsoleView: View {
                     ScrollView(.horizontal) {
                         HStack(alignment: .top, spacing: 0) {
                             ForEach(Array(mixer.channels.enumerated()), id: \.element.id) { index, channel in
-                                AppConsoleStrip(channel: channel, index: index + 1, mixer: mixer)
+                                AppConsoleStrip(channel: channel, index: index + 1)
                             }
                             emptySlot
                         }
@@ -73,7 +75,6 @@ struct MixerConsoleView: View {
         .task { mixer.start() }
         .onReceive(Timer.publish(every: 1.0 / 15, on: .main, in: .common).autoconnect()) { _ in mixer.tick() }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in mixer.shutdown() }
-        .onChange(of: mixer.masterEQ) { _, _ in mixer.apply() }
     }
 
     private var toolbar: some View {
@@ -125,7 +126,6 @@ struct MixerConsoleView: View {
 struct AppConsoleStrip: View {
     @ObservedObject var channel: AppAudioChannel
     let index: Int
-    let mixer: MixerConsoleModel
     @ConsoleState private var showingDetail = false
 
     var body: some View {
@@ -143,13 +143,12 @@ struct AppConsoleStrip: View {
                     .accessibilityLabel("\(channel.app.name) Detail")
             }.padding(.leading, 18).frame(height: ConsoleLayout.headerHeight)
 
-            ConsolePrintedKnob(value: $channel.settings.trimDB, label: "GAIN", trim: true)
+            ConsolePrintedKnob(value: channel.core.equalizer.gain.binding, label: "GAIN", trim: true)
                 .frame(height: ConsoleLayout.gainHeight).accessibilityLabel("\(channel.app.name) gain")
 
             VStack(spacing: 0) {
-                ForEach(Array(AppAudioChannel.frequencies.indices.reversed()), id: \.self) { band in
-                    ConsolePrintedKnob(value: Binding(get: { channel.settings.gains[band] },
-                        set: { channel.setGain($0, index: band) }), label: Self.frequency(channel.settings.frequencies[band]))
+                ForEach(Array(EQSettings.frequencies.indices.reversed()), id: \.self) { band in
+                    ConsolePrintedKnob(value: channel.core.equalizer.bands[band].gain.binding, label: Self.frequency(channel.settings.frequencies[band]))
                         .frame(height: ConsoleLayout.eqRowHeight)
                         .accessibilityLabel("\(channel.app.name) \(Self.frequency(channel.settings.frequencies[band])) gain")
                 }
@@ -166,17 +165,17 @@ struct AppConsoleStrip: View {
                     ConsoleButton(title: "SOLO", active: channel.isSolo, color: .yellow) { channel.isSolo.toggle() }
                 }.frame(width: 54)
                 VStack(spacing: 6) {
-                    ConsolePanControl(value: $channel.settings.pan, compact: true)
+                    ConsolePanControl(value: channel.core.pan.binding, compact: true)
                         .accessibilityLabel("\(channel.app.name) pan")
                     ConsoleResetButton {
-                        channel.settings.gains = [Float](repeating: 0, count: AppAudioChannel.frequencies.count)
+                        channel.settings.gains = [Float](repeating: 0, count: EQSettings.frequencies.count)
                     }.accessibilityLabel("Reset \(channel.app.name) EQ").help("Reset this app's EQ")
                 }
             }.frame(height: ConsoleLayout.channelControlsHeight)
 
             HStack(alignment: .top, spacing: 8) {
                 LiveConsoleMeter(metrics: channel.metrics).frame(width: 36, height: 137).padding(.top, 14)
-                ConsoleFader(value: Binding(get: { channel.settings.volume }, set: { channel.settings.volume = $0 }))
+                ConsoleFader(value: channel.core.volume.binding)
                     .accessibilityLabel("\(channel.app.name) channel volume")
             }.frame(height: ConsoleLayout.appFaderHeight).padding(.trailing, 44)
             Spacer(minLength: 0)
@@ -184,10 +183,7 @@ struct AppConsoleStrip: View {
         .padding(.horizontal, 8).padding(.top, ConsoleLayout.stripTopInset).padding(.bottom, ConsoleLayout.stripBottomInset)
         .frame(width: ConsoleLayout.stripWidth, height: ConsoleLayout.stripHeight, alignment: .top)
         .background(ConsoleChannelPlate(channelNumber: index))
-        .sheet(isPresented: $showingDetail) { ChannelDetailView(channel: channel, mixer: mixer) }
-        .onChange(of: channel.settings) { _, _ in mixer.apply() }
-        .onChange(of: channel.isMuted) { _, _ in mixer.apply() }
-        .onChange(of: channel.isSolo) { _, _ in mixer.apply() }
+        .sheet(isPresented: $showingDetail) { ChannelDetailView(channel: channel) }
     }
 
     private static func frequency(_ frequency: Float) -> String {
@@ -212,14 +208,14 @@ struct MasterConsoleStrip: View {
                     .accessibilityLabel("Master Detail")
             }.frame(height: ConsoleLayout.headerHeight)
 
-            ConsolePrintedKnob(value: $mixer.masterEQ.gainDB, label: "GAIN", trim: true)
+            ConsolePrintedKnob(value: mixer.core.master.equalizer.gain.binding, label: "GAIN", trim: true)
                 .accessibilityLabel("Master gain")
 
             MasterWaveformView(metrics: mixer.masterWaveform).frame(height: ConsoleLayout.masterWaveformHeight)
 
             VStack(spacing: 0) {
                 ForEach(Array(BusEQSettings.frequencies.indices.reversed()), id: \.self) { band in
-                    ConsolePrintedKnob(value: $mixer.masterEQ.gains[band], label: frequencyLabel(mixer.masterEQ.bandFrequencies[band]))
+                    ConsolePrintedKnob(value: mixer.core.master.equalizer.bands[band].gain.binding, label: frequencyLabel(mixer.masterEQ.bandFrequencies[band]))
                         .frame(height: ConsoleLayout.eqRowHeight)
                         .accessibilityLabel("Master \(BusEQSettings.labels[band]) EQ")
                 }
@@ -229,9 +225,9 @@ struct MasterConsoleStrip: View {
 
             VStack(spacing: 6) {
                 HStack(spacing: 20) {
-                    ConsolePanControl(value: $mixer.masterEQ.pan, compact: true)
+                    ConsolePanControl(value: mixer.core.master.pan.binding, compact: true)
                         .accessibilityLabel("Master pan")
-                    ConsoleWidthControl(value: $mixer.masterEQ.width)
+                    ConsoleWidthControl(value: mixer.core.master.width.binding)
                 }
                 ConsoleResetButton {
                     mixer.masterEQ.gains = [Float](repeating: 0, count: BusEQSettings.frequencies.count)
