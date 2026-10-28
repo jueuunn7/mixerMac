@@ -3,10 +3,31 @@ import MixerCore
 import MixerStandardNodes
 import Testing
 import Foundation
+import SwiftUI
 @preconcurrency import AVFAudio
 @testable import mixerMac
 
 struct ChannelDetailTests {
+    @Test @MainActor func graphDragPublishesOneCompleteBandEdit() throws {
+        let domain = "mixerMac.GraphDrag.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: domain))
+        defer { defaults.removePersistentDomain(forName: domain) }
+        let app = AudioApp(id: "drag", name: "Drag", icon: nil, processes: [], isPlaying: false)
+        let channel = AppAudioChannel(app: app, defaults: defaults)
+        let settings = Binding(get: { channel.settings }, set: { channel.settings = $0 })
+        var edits: [(Float, Float)] = []
+        let subscription = channel.core.changes.sink { _ in
+            edits.append((channel.settings.frequencies[5], channel.settings.gains[5]))
+        }
+        setDetailBand(5, frequency: 1234, gain: 3.26, settings: settings)
+        #expect(edits.count == 1)
+        #expect(edits.first?.0 == 1234)
+        #expect(edits.first?.1 == 3.3)
+        let restored = AppAudioChannel(app: app, defaults: defaults)
+        #expect(restored.settings == channel.settings)
+        withExtendedLifetime(subscription) {}
+    }
+
     @Test @MainActor func neutralProcessingPreservesPCM() throws {
         let format = try #require(AVAudioFormat(standardFormatWithSampleRate: 48_000, channels: 2))
         let source = try #require(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 4096))

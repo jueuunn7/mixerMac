@@ -10,6 +10,15 @@ func setDetailGain(_ gain: Float, band: Int, settings: Binding<ChannelSettings>)
     settings.wrappedValue.gains[band] = min(24, max(-24, (gain * 10).rounded() / 10))
 }
 
+/// A graph drag edits both coordinates with one model/persistence notification.
+func setDetailBand(_ band: Int, frequency: Float, gain: Float, settings: Binding<ChannelSettings>) {
+    guard frequency.isFinite, gain.isFinite else { return }
+    var updated = settings.wrappedValue
+    updated.frequencies[band] = min(20_000, max(20, frequency))
+    updated.gains[band] = min(24, max(-24, (gain * 10).rounded() / 10))
+    settings.wrappedValue = updated
+}
+
 struct DetailFaderBank: View {
     @Binding var settings: ChannelSettings
     @Binding var selectedBand: Int

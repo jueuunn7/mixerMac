@@ -43,6 +43,7 @@ private enum ConsolePalette {
 
 struct MixerConsoleView: View {
     @StateObject private var mixer = MixerConsoleModel()
+    @ConsoleState private var meterTimer = Timer.publish(every: 1.0 / 15, on: .main, in: .common).autoconnect()
     var body: some View {
         VStack(spacing: 0) {
             toolbar
@@ -65,7 +66,7 @@ struct MixerConsoleView: View {
         .background(LinearGradient(colors: [Color(white: 0.79), Color(white: 0.69)], startPoint: .topLeading, endPoint: .bottomTrailing))
         .preferredColorScheme(.light)
         .task { mixer.start() }
-        .onReceive(Timer.publish(every: 1.0 / 15, on: .main, in: .common).autoconnect()) { _ in mixer.tick() }
+        .onReceive(meterTimer) { _ in mixer.tick() }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in mixer.shutdown() }
     }
 

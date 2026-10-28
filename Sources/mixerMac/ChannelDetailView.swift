@@ -37,6 +37,8 @@ private struct EQDetailView: View {
     @StateObject private var detail = ChannelDetailModel()
     @DetailState private var selectedBand = 0
     @DetailState private var showingFaders = true
+    // Keep the same publisher while graph drags rebuild the view at pointer rate.
+    @DetailState private var analysisTimer = Timer.publish(every: 0.15, on: .main, in: .common).autoconnect()
 
     var body: some View {
         VStack(spacing: 14) {
@@ -103,7 +105,7 @@ private struct EQDetailView: View {
         .background(LinearGradient(colors: [Color(white: 0.84), Color(white: 0.73)], startPoint: .topLeading, endPoint: .bottomTrailing))
         .foregroundStyle(Color(white: 0.13)).preferredColorScheme(.light)
         .onAppear { detail.tick(settings: settings, feed: feed, isProcessing: isProcessing) }
-        .onReceive(Timer.publish(every: 0.15, on: .main, in: .common).autoconnect()) { _ in detail.tick(settings: settings, feed: feed, isProcessing: isProcessing) }
+        .onReceive(analysisTimer) { _ in detail.tick(settings: settings, feed: feed, isProcessing: isProcessing) }
         .onChange(of: settings) { _, _ in
             detail.refreshResponse(settings: settings)
         }
@@ -249,9 +251,10 @@ private struct DetailResponsePlot: View {
                             selectedBand = band
                             if dragStart == nil { dragStart = (settings.frequencies[band], settings.gains[band]) }
                             guard let start = dragStart else { return }
-                            settings.frequencies[band] = Float(min(detail.upperFrequency, max(20,
+                            let frequency = Float(min(detail.upperFrequency, max(20,
                                 Double(start.frequency) * pow(detail.upperFrequency / 20, event.translation.width / rect.width))))
-                            setDetailGain(start.gain - Float(event.translation.height / rect.height * extent * 2), band: band, settings: $settings)
+                            let gain = start.gain - Float(event.translation.height / rect.height * extent * 2)
+                            setDetailBand(band, frequency: frequency, gain: gain, settings: $settings)
                         }.onEnded { _ in dragStart = nil })
                         .onTapGesture { selectedBand = band }
                         .accessibilityLabel("Select EQ band \(band + 1)")
