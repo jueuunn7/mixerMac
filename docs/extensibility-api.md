@@ -110,3 +110,59 @@ primitive contracts, not alternative lifecycle entry points. Adding a concrete
 implementation means new implementation files and registration at the caller's
 composition root. A breaking meaning/schema change requires a versioned migration;
 it cannot be made compatible by an unused wrapper or silently ignored data.
+
+## Channel width and presentation ordering
+
+| Method / property | Responsibility and caller | Reason for this boundary |
+|---|---|---|
+| `NodeSnapshot.init(id:typeID:...)` | Constructs an explicit migrated snapshot; the standard channel migration calls it. | A migration can change a versioned node tree without mutating a live model. |
+| `NodeRegistry.register(migrate:factory:)` | Associates an optional snapshot migration with a factory and applies it before construction/restore. | The generic restore path stays independent of concrete preset versions. |
+| `ConsoleChannel.configurationVersion` | Identifies the version-2 preset with a required WIDTH stage. | Version-1 trees can be distinguished from malformed current trees. |
+| `StandardNodeRegistry.migrateChannel` | Adds a neutral WIDTH node to version-1 channels while retaining existing stages and their order. | Older saved graphs remain playable without teaching core about WIDTH. |
+| `ConsolePreferences.channelOrder`, `saveChannelOrder` | Read/write the user's stable app IDs in display order; the session uses them. | Presentation order is independent of audio routing and topology. |
+| `MixerSession.moveChannel` | Moves one visible channel before/after another, preserving channel objects and remembering offline IDs. | DnD invokes one testable ordering operation rather than modifying DSP or view-local arrays. |
+| `MixerSession.sortChannels` | Restores the saved order after discovery; new apps are appended stably. | Periodic discovery must not undo user reordering. |
+| `ChannelDragItem.transferRepresentation` | Supplies typed channel-ID transfer data to SwiftUI draggable/drop destinations. | Audio knobs keep their own gestures, and unrelated text/file drops are not channel moves. |
+| `ConsoleActionButtonStyle.makeBody` | Draws a 16-point dark action button with RESET/DETAIL beside it, matching the MUTE/SOLO ring and 24-point hit row with hover, pressed and disabled states. | RESET and DETAIL share one visual and interaction implementation. |
+
+## Filter and CRUNCH responsibilities
+
+| Method / property | Responsibility and caller | Reason for this boundary |
+|---|---|---|
+| `FilterNode.init`, `CrunchNode.init` | Own bounded filter mode/frequency/resonance and saturation amount; bank composition and registry factories call them. | UI and DSP bind to one persisted model, independent of audio frameworks. |
+| `FilterRouterNode.init` | Owns the discrete dry/1/2 assignment and explicit output ports; composition and restore call it. | Live assignment does not require graph mutation or teaching core about filters. |
+| `ConsoleFilterBank.init`, `validateProcessingNodes` | Construct and enforce CRUNCH → filter; composition and graph restore use them. | Filtering must follow saturation, and bank bypass must disable both together. |
+| `ConsoleFilters.init` | Reuses typed saved banks or adds two disabled defaults; the session calls it after restore. | Shared bank lifetime and identity have one composition owner. |
+| `ConsoleFilters.router` | Locates a channel's persisted assignment node; its dashboard header calls it. | View state is not a second routing model. |
+| `ConsoleFilters.connectChannels` | Installs missing banks and replaces direct console dry routes with neutral router paths; initialization/discovery call it. | Idempotent composition preserves custom connections and existing control objects. |
+| `ConsoleDocumentMigration.removingBuiltInEffects` | Removes the previous console-owned send/returns and their incident edges; session restore calls it. | Removed concrete effects do not become permanent core dependencies. |
+| `GraphSnapshot.init(version:nodes:connections:)` | Constructs a complete migrated snapshot; concrete document migration uses it. | Typed migration does not rewrite opaque JSON or instantiate live nodes. |
+| `StandardNodeRegistry.migrateChannel` | Retains legacy WIDTH migration and removes the owned compressor from old version-3 channels. | Existing EQ/stereo/volume and extra registered nodes survive the requested effect removal. |
+| `FilterProcessor.init`, `applyParameters` | Construct and configure Apple's resonant filter from model parameters; registry/renderer call them. | Native type identifiers and bandwidth mapping remain at the audio boundary. |
+| `CrunchProcessor.init`, `applyParameters` | Construct the standalone CRUNCH AU and publish amount; registry/renderer call them. | The model never owns native render resources. |
+| `FilterRouterProcessor.init`, `applyParameters` | Wire input to three native gates and enable one output. | Reassignment and bypass retain topology and running source objects. |
+| `AudioProcessor.connections` | Declares internal native edges; registry validates ownership/buses and renderer connects after attachment. | Router fan-out uses the same extension contract as other processors. |
+| `CrunchRenderState.init`, `deinit` | Allocate/release native DSP; the AU owns this render state. | Render closure capture keeps resources alive without allocating in the callback. |
+| `CrunchAudioUnit.init`, `allocateRenderResources`, `deallocateRenderResources` | Declare stereo buses, validate formats, allocate reusable backing and reset smoothing outside rendering. | Host lifecycle owns buffers and sample rate. |
+| `CrunchAudioUnit.set`, `shouldBypassEffect` | Publish bounded amount/bypass atomically; the processor and host call them. | Controls never mutate render-owned smoothing state. |
+| `CrunchAudioUnit.internalRenderBlock` | Pull input, supply preallocated output memory and call native DSP. | The engine receives a normal stereo AU contract. |
+| `mixerMacCrunchCreate`, `Destroy`, `Reset` | Own native state; AU construction/resource lifecycle uses them. | Allocation and smoothing reset stay outside the render callback. |
+| `mixerMacCrunchSet`, `Process` | Publish atomic targets and apply stereo shaping within supplied buffer bounds. | No locks/allocations occur in processing; zero/bypass preserve original PCM. |
+| `ConsoleFilterStrip.body`, `ConsoleFilterBankControls.body` | Present both shared banks beside the dashboard master; the main console embeds the strip. | Filter operation is visible alongside channels without opening a separate page. |
+| `ConsoleFilterKnob.position`, `lower`, `upper`, `body` | Map the existing rotary cap to linear or logarithmic model units, observe its parameter, and expose precise numeric editing. | Frequency and normalized effects reuse the established knob appearance without changing the audio model. |
+| `ConsoleEQKnob.reset` | Supplies an optional parameter-specific reset callback; dashboard filter knobs pass their own reset operation. | Frequency/CRUNCH defaults differ from EQ's 0 dB default, while existing EQ callers retain their behavior. |
+| `FilterAssignmentControl.body` | Draw the three-detent 1/OFF/2 knob, map label clicks/vertical dragging to existing route values, and observe external/restored changes. | Shared routing state lies outside the channel's own publication stream. |
+
+The session and standalone channel adapter back up original version-3 records before
+rewriting. The test render helper exercises production routing offline; RMS and harmonic
+helpers measure its steady-state frequency response and added distortion components.
+
+`ConsoleButton.stacked` places mode captions below their existing circular buttons
+in the compact filter strip. Other callers retain horizontal labels. All strip
+widths now use the same 132-point layout constant; no audio parameters or routing
+contracts change.
+
+`ConsoleEQKnob.showsScale` hides the continuous EQ scale for the discrete assignment
+knob while retaining its original cap. Existing EQ/stereo/filter callers retain
+their printed scales. The assignment control owns the three detents and observes
+the existing router parameter; no new routing model is introduced.

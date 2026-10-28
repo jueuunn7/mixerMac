@@ -27,4 +27,10 @@ void mixerMacStereoDestroy(mixerMacStereo *state);
 void mixerMacStereoSetBypassed(mixerMacStereo *state, int bypassed);
 void mixerMacStereoSet(mixerMacStereo *state, float pan, float width);
 void mixerMacStereoProcess(mixerMacStereo *state, uint32_t frames, AudioBufferList *buffers);
+typedef struct mixerMacCrunch mixerMacCrunch;
+mixerMacCrunch *mixerMacCrunchCreate(void);
+void mixerMacCrunchDestroy(mixerMacCrunch *state);
+void mixerMacCrunchReset(mixerMacCrunch *state);
+void mixerMacCrunchSet(mixerMacCrunch *state, float amount, int bypassed);
+void mixerMacCrunchProcess(mixerMacCrunch *state, uint32_t frames, AudioBufferList *buffers, double rate);
 #endif

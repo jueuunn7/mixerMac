@@ -31,6 +31,7 @@ Each detected application gets an independent channel. The master strip controls
 - **Channel and master GAIN**, adjustable from −24 to +24 dB.
 - **Channel volume faders**, mute, solo, and stereo pan.
 - **Master PAN and WIDTH**, with mono at 0%, original stereo at 100%, and wider stereo up to 200%.
+- **Two shared filter banks**, with LPF/BPF/HPF, resonance and pre-filter CRUNCH. Channel headers use a 1/OFF/2 selector knob; the fixed FILTERS strip beside the master controls both banks.
 - **Live level meters**, peak hold, and a master waveform display.
 - **Saved settings**, including channel controls, master controls, output selection, and the last power state.
 
@@ -77,6 +78,31 @@ Open **Detail** on an application channel or the master to inspect the EQ respon
 - Adjust GAIN and PAN; master Detail also includes WIDTH.
 
 The response graph queries the same EQ configuration used for playback, including gain. Visualization smoothing is fixed at 50%. Settings save automatically as you edit.
+
+## Filters and CRUNCH
+
+Built-in tone processing is **ten-band EQ, filter and CRUNCH**. The mixer does not
+include a compressor, limiter, reverb or delay. External effect connections are
+outside this version's scope.
+
+Each channel header has a three-position **1 / OFF / 2** selector knob on the dashboard. Click a label or drag the knob vertically. The two shared
+banks live in the fixed **FILTERS** strip beside MASTER, with independent enabled switches,
+LPF/BPF/HPF mode, logarithmic frequency sweep, resonance and CRUNCH amount. Double-click a filter knob to restore its own default; numeric fields allow precise
+editing. DETAIL remains the EQ editor. New
+channels select OFF and both banks start disabled. A disabled bank passes its
+assigned channels unchanged; channels do not also play through a duplicate dry route.
+
+CRUNCH soft-saturates the sum of assigned channels before filtering. It is a digital
+implementation, not a model of the Xone analogue circuit. Channel EQ, stereo controls,
+fader, mute and solo remain upstream; both bank outputs join the master input.
+Frequency, resonance and assignment edits apply without restarting the engine.
+Resonance and saturation can raise output level; no automatic limiter is added.
+
+Saved settings from the previous built-in-effect experiment are migrated by removing
+its owned compressor and reverb/delay send/returns. Original graph and channel-node
+records are backed up once under `backup.beforeFilterOnly.<originalKey>` before
+rewriting. Unrelated registered effects and custom routes remain intact. Channels
+already using custom routes are not automatically rerouted through the filter banks.
 
 ## Build from source
 

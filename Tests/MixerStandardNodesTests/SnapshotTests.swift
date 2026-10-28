@@ -48,3 +48,26 @@ extension SnapshotTests {
         #expect(throws: SnapshotError.incompatibleNode("")) { try registry.makeNode(from: snapshot) }
     }
 }
+
+extension SnapshotTests {
+    @Test @MainActor func legacyChannelTreeGainsNeutralWidthWithoutLosingItsEffectsOrSettings() throws {
+        let channel = ConsoleChannel(id: "legacy")
+        channel.pan.setValue(-0.3)
+        channel.volume.setValue(0.4)
+        channel.equalizer.bands[5].gain.setValue(3)
+        try channel.append(GainNode(id: "extra", value: -2))
+        let current = try NodeSnapshot(channel)
+        let legacy = NodeSnapshot(id: current.id, typeID: current.typeID, structure: current.structure,
+            configurationVersion: 1, configuration: current.configuration, ports: current.ports,
+            parameters: current.parameters, isBypassed: current.isBypassed,
+            children: current.children.filter { $0.id != channel.widthStage.id })
+        let registry = try StandardNodeRegistry.make()
+        let restored = try #require(try registry.makeNode(from: legacy) as? ConsoleChannel)
+        #expect(restored.settings == channel.settings)
+        #expect(restored.width.value == 1)
+        #expect(restored.children.map(\.id) == channel.children.map(\.id))
+        #expect(restored.children[1] === restored.widthStage)
+        #expect(restored.children.last?.parameters["gain"]?.value == -2)
+        #expect(try registry.makeNode(from: NodeSnapshot(restored)).configurationVersion == 2)
+    }
+}

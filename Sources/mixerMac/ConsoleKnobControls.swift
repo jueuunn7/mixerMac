@@ -40,64 +40,68 @@ struct ConsoleEQKnob: View {
     @Binding var value: Float
     var trim: Bool = false
     var tickRadius: CGFloat = 20
+    var showsScale = true
+    var reset: (() -> Void)? = nil
     @ConsoleKnobState private var initial: Float?
 
     private let ink = Color(white: 0.12)
 
     var body: some View {
         ZStack {
-            Canvas { context, size in
-                let center = CGPoint(x: size.width / 2, y: size.height / 2)
-                let radius = max(17, tickRadius)
-                func point(_ angle: Double, _ distance: CGFloat) -> CGPoint {
-                    let radians = angle * .pi / 180
-                    return CGPoint(x: center.x + sin(radians) * distance,
-                                   y: center.y - cos(radians) * distance)
-                }
-                var marks = Path()
-                do {
-                    // Fine graduations sit on the lower cheeks of the knob.
-                    for angle in stride(from: -120, through: 120, by: 10)
-                    where abs(angle) >= 40 && abs(angle) != 90 {
-                        marks.move(to: point(Double(angle), radius - 2.5))
-                        marks.addLine(to: point(Double(angle), radius + 0.5))
+            if showsScale {
+                Canvas { context, size in
+                    let center = CGPoint(x: size.width / 2, y: size.height / 2)
+                    let radius = max(17, tickRadius)
+                    func point(_ angle: Double, _ distance: CGFloat) -> CGPoint {
+                        let radians = angle * .pi / 180
+                        return CGPoint(x: center.x + sin(radians) * distance,
+                                       y: center.y - cos(radians) * distance)
                     }
-                }
-                context.stroke(marks, with: .color(ink.opacity(0.85)), lineWidth: 0.65)
+                    var marks = Path()
+                    do {
+                        // Fine graduations sit on the lower cheeks of the knob.
+                        for angle in stride(from: -120, through: 120, by: 10)
+                        where abs(angle) >= 40 && abs(angle) != 90 {
+                            marks.move(to: point(Double(angle), radius - 2.5))
+                            marks.addLine(to: point(Double(angle), radius + 0.5))
+                        }
+                    }
+                    context.stroke(marks, with: .color(ink.opacity(0.85)), lineWidth: 0.65)
 
-                var major = Path()
-                for side in [-1.0, 1.0] {
-                    major.move(to: point(side * 90, radius - 3))
-                    major.addLine(to: point(side * 90, radius + 5))
-                    // Each endpoint branches diagonally, then turns outward.
-                    major.move(to: point(side * 135, radius - 2))
-                    major.addLine(to: CGPoint(x: center.x + CGFloat(side) * (radius - 1),
-                                             y: center.y + radius - 1))
-                    major.addLine(to: CGPoint(x: center.x + CGFloat(side) * (radius + 5),
-                                             y: center.y + radius - 1))
-                }
-                context.stroke(major, with: .color(ink),
-                               style: StrokeStyle(lineWidth: 1.05, lineCap: .butt, lineJoin: .miter))
+                    var major = Path()
+                    for side in [-1.0, 1.0] {
+                        major.move(to: point(side * 90, radius - 3))
+                        major.addLine(to: point(side * 90, radius + 5))
+                        // Each endpoint branches diagonally, then turns outward.
+                        major.move(to: point(side * 135, radius - 2))
+                        major.addLine(to: CGPoint(x: center.x + CGFloat(side) * (radius - 1),
+                                                 y: center.y + radius - 1))
+                        major.addLine(to: CGPoint(x: center.x + CGFloat(side) * (radius + 5),
+                                                 y: center.y + radius - 1))
+                    }
+                    context.stroke(major, with: .color(ink),
+                                   style: StrokeStyle(lineWidth: 1.05, lineCap: .butt, lineJoin: .miter))
 
-                // The printed zero marker narrows toward the rubber cap.
-                let top = center.y - 14 - 3.8
-                var zero = Path()
-                zero.move(to: CGPoint(x: center.x, y: top + 4))
-                zero.addCurve(to: CGPoint(x: center.x - 1.7, y: top + 1),
-                              control1: CGPoint(x: center.x - 0.7, y: top + 2.8),
-                              control2: CGPoint(x: center.x - 1.7, y: top + 2.2))
-                zero.addCurve(to: CGPoint(x: center.x + 1.7, y: top + 1),
-                              control1: CGPoint(x: center.x - 1.7, y: top - 1),
-                              control2: CGPoint(x: center.x + 1.7, y: top - 1))
-                zero.addQuadCurve(to: CGPoint(x: center.x, y: top + 4),
-                                  control: CGPoint(x: center.x + 1.7, y: top + 2.4))
-                context.fill(zero, with: .color(ink))
+                    // The printed zero marker narrows toward the rubber cap.
+                    let top = center.y - 14 - 3.8
+                    var zero = Path()
+                    zero.move(to: CGPoint(x: center.x, y: top + 4))
+                    zero.addCurve(to: CGPoint(x: center.x - 1.7, y: top + 1),
+                                  control1: CGPoint(x: center.x - 0.7, y: top + 2.8),
+                                  control2: CGPoint(x: center.x - 1.7, y: top + 2.2))
+                    zero.addCurve(to: CGPoint(x: center.x + 1.7, y: top + 1),
+                                  control1: CGPoint(x: center.x - 1.7, y: top - 1),
+                                  control2: CGPoint(x: center.x + 1.7, y: top - 1))
+                    zero.addQuadCurve(to: CGPoint(x: center.x, y: top + 4),
+                                      control: CGPoint(x: center.x + 1.7, y: top + 2.4))
+                    context.fill(zero, with: .color(ink))
+                }
+                // Canvas clips to its own drawing bounds. Give the printing room
+                // while reporting only the physical cap's size to the stack.
+                .frame(width: 56, height: 56)
+                .frame(width: 28, height: 28)
+                .allowsHitTesting(false)
             }
-            // Canvas clips to its own drawing bounds. Give the printing room
-            // while reporting only the physical cap's size to the stack.
-            .frame(width: 56, height: 56)
-            .frame(width: 28, height: 28)
-            .allowsHitTesting(false)
 
             ZStack {
                 Circle().fill(.black.opacity(0.75)).padding(-0.7)
@@ -126,13 +130,13 @@ struct ConsoleEQKnob: View {
                 value = ConsoleKnobValue.quantized((initial ?? value) - Float(event.translation.height) * 0.14)
             }
             .onEnded { _ in initial = nil })
-        .simultaneousGesture(TapGesture(count: 2).onEnded { initial = nil; value = 0 })
+        .simultaneousGesture(TapGesture(count: 2).onEnded { initial = nil; if let reset { reset() } else { value = 0 } })
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(trim ? "Gain" : "EQ gain")
         .accessibilityValue(String(format: "%+.1f dB", value))
         .accessibilityAdjustableAction { value = ConsoleKnobValue.adjust(value, direction: $0) }
-        .accessibilityAction(named: Text("Reset to 0 dB")) { value = 0 }
-        .help("Drag up or down · double-click resets to 0 dB")
+        .accessibilityAction(named: Text(reset == nil ? "Reset to 0 dB" : "Reset")) { if let reset { reset() } else { value = 0 } }
+        .help(reset == nil ? "Drag up or down · double-click resets to 0 dB" : "Drag up or down · double-click resets")
     }
 }
 

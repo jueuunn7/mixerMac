@@ -10,6 +10,7 @@ extension BusEQSettings {
             settings.bandwidths = bandwidths
             settings.trimDB = eqSettings.gainDB
             settings.pan = pan
+            settings.width = width
             settings.eqEnabled = enabled
             return settings
         }
@@ -19,6 +20,7 @@ extension BusEQSettings {
             bandwidths = newValue.bandwidths
             gainDB = (newValue.trimDB.isFinite ? min(24, max(-24, newValue.trimDB)) : 0)
             pan = PanBalance.clamped(newValue.pan)
+            width = StereoWidth.clamped(newValue.width)
             enabled = true
         }
     }

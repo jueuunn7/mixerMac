@@ -76,6 +76,9 @@ public final class AppAudioChannel: ObservableObject, Identifiable {
             do {
                 let registry = try nodeRegistry ?? StandardNodeRegistry.make()
                 let snapshot = try JSONDecoder().decode(NodeSnapshot.self, from: data)
+                if snapshot.configurationVersion == 3, defaults.data(forKey: "backup.beforeFilterOnly.channel.nodes.\(app.id)") == nil {
+                    defaults.set(data, forKey: "backup.beforeFilterOnly.channel.nodes.\(app.id)")
+                }
                 guard let restored = try registry.makeNode(from: snapshot) as? ConsoleChannel, restored.id == app.id else {
                     throw SnapshotError.incompatibleNode(app.id)
                 }

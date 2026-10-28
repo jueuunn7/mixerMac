@@ -156,3 +156,71 @@ and visible UI behavior still require a separate manual check.
 
 See `extensibility-api.md` for the responsibility and caller of the new entry
 points and internal policy helpers.
+
+## Channel WIDTH and drag ordering
+
+Standard channels now use preset configuration version 2: EQ → WIDTH → PAN →
+volume. The WIDTH stage reuses the master's model and audio processor, with a
+neutral value of 100%. Both the console and detail editor update the same owned
+parameter. Legacy flat settings default missing width to 100%; registry migration
+adds that neutral stage to version-1 node trees without losing existing effects.
+RESET retains its existing EQ-gain reset scope; width still resets to 100% by
+double-clicking its knob or the detail width reset.
+
+Channel header drags carry typed channel IDs. Dropping on the left/right half of
+another strip moves before/after it. The master remains fixed. The session stores
+display order separately in preferences; its channel observer reconciles core
+membership only when model identities change. Display reordering therefore does
+not rebuild the audio graph, restart output or recreate captures. Discovery,
+disappearance/reappearance and session recreation preserve the remembered order.
+
+## EQ, shared filters and CRUNCH
+
+The console retains ten-band EQ and the version-2 channel preset (EQ → WIDTH →
+PAN → volume). Its optional post-fader assignment is a separate `FilterRouterNode`
+with dry/filter1/filter2 outputs and a persisted 0/1/2 selection. A native mixer gate
+enables exactly one branch; assignment is a parameter edit rather than a topology
+change. Router bypass selects dry. Each `ConsoleFilterBank` contains CRUNCH followed
+by the filter; disabling the bank bypasses both stages and preserves the assigned
+signal. Selected bank outputs feed the master input, where master EQ/stereo controls
+process the combined result. The channel's gate already applies mute/solo upstream.
+
+`ConsoleFilters` composes and reuses these banks and routers after graph restoration.
+It replaces only a console channel's direct-to-master edge. Custom routes are retained
+and no filter assignment control is offered for those channels. New sources get a
+neutral assignment. Membership/route installation is batched by the session before
+apply/save so an intermediate topology is not rebuilt.
+
+`FilterProcessor` uses Apple resonant low/high-pass or band-pass EQ, mapping resonance
+to bandwidth 2…0.1 octaves and clamping cutoff below 0.45 times the native sample rate.
+CRUNCH is a stereo native AU with an allocation-free C render loop, atomic controls,
+10 ms amount smoothing, exact dry behavior at zero/bypass and normalized tanh soft
+saturation. It is not an analogue circuit model and does not oversample. The explicit
+processor-internal connections support the router's fan-out without special-casing
+its type in the renderer.
+
+No compressor, reverb, delay or external-effects endpoint is installed. Concrete
+document migration removes only the previous console-owned send/returns; the standard
+registry strips its owned compressor from version-3 channel snapshots back to the
+version-2 schema. Raw original graph/channel-node records are copied once under
+`backup.beforeFilterOnly.<originalKey>`. Generic graph snapshots expose a raw-value
+initializer so concrete migrations remain outside core; unknown extensions still
+fail restoration without overwriting the saved document.
+
+### Dashboard controls
+
+Channel headers expose the persisted assignment with a three-position 1/OFF/2 rotary selector using the existing console knob cap. The pointer snaps to left/up/right; vertical drags and label clicks keep the original assignment values. Clicks and dragging map to the same saved 1/0/2 values. A fixed 132-point
+FILTERS strip beside MASTER contains both banks, with LPF/BPF/HPF and enabled buttons,
+existing console-style rotary caps and numeric frequency/resonance/CRUNCH controls.
+DETAIL is again the EQ editor; no separate filter page or tab exists. The new strip
+shares the existing dashboard height; application channels continue scrolling
+horizontally. The effect graph, parameter identities and DSP are unchanged.
+
+The compact dashboard uses 132-point app/master/filter strips (previously 150-point
+channels and a 180-point filter strip), an 860-point opening width and an 800-point
+minimum width. Fader and stereo-control sizes are retained; channels scroll when
+the window cannot show them all.
+
+The app header is 55 points high to fit the 28-point selector knob and its labels;
+its fader region is 170 points high, preserving the total strip height. Master
+header/fader geometry and compact horizontal dimensions stay unchanged.

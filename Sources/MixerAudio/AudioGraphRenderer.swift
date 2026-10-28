@@ -162,6 +162,7 @@ public final class AudioGraphRenderer {
         } else {
             let processor = definitions[node.id]!
             for audioNode in processor.nodes { attach(audioNode) }
+            connections.append(contentsOf: processor.connections.map { Connection(source: $0.source, destination: $0.destination) })
             var inputs: [String: AudioEndpoint] = [:]
             for (id, input) in processor.inputs {
                 let sum = AVAudioMixerNode()

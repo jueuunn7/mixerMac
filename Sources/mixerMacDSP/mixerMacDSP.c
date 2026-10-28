@@ -303,3 +303,45 @@ void mixerMacStereoProcess(mixerMacStereo *state, uint32_t frames, AudioBufferLi
         right[i] = (mid - side) * fminf(1, 1 + state->renderedPan);
     }
 }
+
+struct mixerMacCrunch {
+    _Atomic(float) amount;
+    atomic_bool bypassed;
+    float renderedAmount;
+};
+
+mixerMacCrunch *mixerMacCrunchCreate(void) {
+    mixerMacCrunch *state = calloc(1, sizeof(mixerMacCrunch));
+    if (!state) return NULL;
+    atomic_init(&state->amount, 0);
+    atomic_init(&state->bypassed, false);
+    return state;
+}
+void mixerMacCrunchDestroy(mixerMacCrunch *state) { free(state); }
+void mixerMacCrunchReset(mixerMacCrunch *state) { state->renderedAmount = 0; }
+void mixerMacCrunchSet(mixerMacCrunch *state, float amount, int bypassed) {
+    atomic_store_explicit(&state->amount, isfinite(amount) ? fmaxf(0, fminf(1, amount)) : 0, memory_order_relaxed);
+    atomic_store_explicit(&state->bypassed, bypassed != 0, memory_order_relaxed);
+}
+void mixerMacCrunchProcess(mixerMacCrunch *state, uint32_t frames, AudioBufferList *buffers, double rate) {
+    if (atomic_load_explicit(&state->bypassed, memory_order_relaxed)) { state->renderedAmount = 0; return; }
+    if (buffers->mNumberBuffers != 2 || rate <= 0) return;
+    if (!buffers->mBuffers[0].mData || !buffers->mBuffers[1].mData) return;
+    const float target = atomic_load_explicit(&state->amount, memory_order_relaxed);
+    const float smoothing = 1 - expf(-1 / (float)(rate * 0.01));
+    float *left = buffers->mBuffers[0].mData, *right = buffers->mBuffers[1].mData;
+    uint32_t available = buffers->mBuffers[0].mDataByteSize / sizeof(float);
+    uint32_t rightAvailable = buffers->mBuffers[1].mDataByteSize / sizeof(float);
+    if (frames > available) frames = available;
+    if (frames > rightAvailable) frames = rightAvailable;
+    for (uint32_t i = 0; i < frames; ++i) {
+        state->renderedAmount += smoothing * (target - state->renderedAmount);
+        if (fabsf(target - state->renderedAmount) < 0.000001f) state->renderedAmount = target;
+        const float amount = state->renderedAmount;
+        if (amount == 0) continue;
+        const float drive = 1 + 15 * amount;
+        const float normalization = tanhf(drive);
+        left[i] += amount * (tanhf(left[i] * drive) / normalization - left[i]);
+        right[i] += amount * (tanhf(right[i] * drive) / normalization - right[i]);
+    }
+}

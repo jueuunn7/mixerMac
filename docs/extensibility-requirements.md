@@ -54,11 +54,11 @@ build results. Hardware and visible UI behavior remain outside headless verifica
 - Extension proof: core fixtures import only core; audio fixtures are a separate
   module. A new source/effect is registered into the production playback runtime
   without editing core, standard nodes or existing processors.
-- 99 Swift tests pass, including routing branches, sum, live stage insertion,
+- 111 Swift tests pass, including routing branches, sum, live stage insertion,
   parameter changes without rebuild, invalid-extension recovery, source lifecycle,
   44.1/48 kHz conversion, neutral PCM, balance/bypass/width, legacy EQ behavior,
-  sticky errors and graph/session persistence with unavailable-extension retention.
-- Plain native `BridgeTests` and `BridgeQualityTests` pass. They cover buffer
+  filter response, CRUNCH harmonics, neutral routing, effect-removal migration, sticky errors and graph/session persistence with unavailable-extension retention.
+- Plain native `BridgeTests`, `BridgeQualityTests` and `CrunchTests` pass. They cover buffer
   ownership, silence, separation, wraparound, underrun, bit-exact equal-clock
   PCM and drift correction. These runs are not sanitizer results; the host's
   previously diagnosed sanitizer-runtime initialization issue remains separate.

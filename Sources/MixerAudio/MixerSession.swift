@@ -6,12 +6,21 @@ import MixerStandardNodes
 
 @MainActor
 open class MixerSession: ObservableObject {
+    public let filters: ConsoleFilters?
     public let core: ConsoleMixer
     private var coreSubscription: AnyCancellable?
     @Published public private(set) var channels: [AppAudioChannel] = [] {
         didSet {
-            let currentIDs = Set(channels.map(\.id))
-            core.replaceChannels(core.channels.filter { !currentIDs.contains($0.id) } + channels.map(\.core))
+            let registered = core.channels
+            let changed = channels.filter { channel in !registered.contains { $0 === channel.core } }
+            if !changed.isEmpty {
+                updatingChannels = true
+                defer { updatingChannels = false; saveGraph(); apply() }
+                let ids = Set(changed.map(\.id))
+                core.replaceChannels(registered.filter { !ids.contains($0.id) } + changed.map(\.core))
+                do { try filters?.connectChannels() }
+                catch { documentError = error; updateStatus() }
+            }
         }
     }
     @Published public private(set) var outputs: [OutputDevice] = []
@@ -42,8 +51,10 @@ open class MixerSession: ObservableObject {
     private var masterProcessIDs: [AudioObjectID] = []
     private let preferences: ConsolePreferences
     private var preferredOutputUID: String?
+    private var channelOrder: [String]
     private var runRestoration: MixerRunRestoration
     private var isShuttingDown = false
+    private var updatingChannels = false
 
     public init(preferences: ConsolePreferences = ConsolePreferences(),
          nodeRegistry: NodeRegistry? = nil,
@@ -58,12 +69,19 @@ open class MixerSession: ObservableObject {
         self.makeCapture = makeCapture
         self.discoverOwnProcesses = discoverOwnProcesses
         preferredOutputUID = preferences.outputUID
+        var seen: Set<String> = []
+        channelOrder = preferences.channelOrder.filter { seen.insert($0).inserted }
         runRestoration = MixerRunRestoration(preferences: preferences)
         do { self.nodeRegistry = try nodeRegistry ?? StandardNodeRegistry.make() }
         catch { preconditionFailure("Invalid built-in node registrations: \(error)") }
         if let data = preferences.defaults.data(forKey: "mixer.graph.v1") {
             do {
-                let snapshot = try JSONDecoder().decode(GraphSnapshot.self, from: data)
+                let original = try JSONDecoder().decode(GraphSnapshot.self, from: data)
+                let snapshot = ConsoleDocumentMigration.removingBuiltInEffects(from: original)
+                if (snapshot != original || original.nodes.contains { $0.typeID == "standard.console-channel" && $0.configurationVersion == 3 }),
+                   preferences.defaults.data(forKey: "backup.beforeFilterOnly.mixer.graph.v1") == nil {
+                    preferences.defaults.set(data, forKey: "backup.beforeFilterOnly.mixer.graph.v1")
+                }
                 let graph = AudioGraph()
                 try self.nodeRegistry.restore(snapshot, into: graph)
                 guard let master = graph.nodes.first(where: { $0.id == "master" }) as? ConsoleBus else {
@@ -80,6 +98,10 @@ open class MixerSession: ObservableObject {
                 documentError = error
             }
         } else { core = ConsoleMixer(masterSettings: BusEQSettings.restored(defaults: preferences.defaults)) }
+        if documentError == nil {
+            do { filters = try ConsoleFilters(mixer: core) }
+            catch { filters = nil; documentError = error }
+        } else { filters = nil }
         do {
             playback = AudioGraphPlayback(graph: core.graph, destination: PortAddress(nodeID: core.master.id, portID: "output"),
                 output: audioOutput ?? DeviceAudioOutput(), sources: try sources ?? ApplicationAudioSources.make(),
@@ -87,7 +109,7 @@ open class MixerSession: ObservableObject {
                 format: AVAudioFormat(standardFormatWithSampleRate: 48_000, channels: 2)!)
         } catch { preconditionFailure("Invalid built-in audio registrations: \(error)") }
         coreSubscription = core.changes.sink { [weak self] change in
-            guard let self else { return }
+            guard let self, !self.updatingChannels else { return }
             self.objectWillChange.send()
             if change == .master { self.saveMasterEQ() }
             self.saveGraph()
@@ -158,6 +180,7 @@ open class MixerSession: ObservableObject {
         for removed in channels where !ids.contains(removed.id) { removed.shutdown() }
         if channels.contains(where: { !ids.contains($0.id) }) { channels.removeAll { !ids.contains($0.id) } }
         channelErrors = channelErrors.filter { ids.contains($0.key) }
+        sortChannels()
         if !isMixing, runRestoration.takeStartupAttempt(
             hasOutput: outputs.contains(where: { $0.id == outputID }),
             hasApps: channels.contains(where: { !$0.app.processes.isEmpty })
@@ -167,6 +190,34 @@ open class MixerSession: ObservableObject {
         }
         updateMasterCaptureRouting()
         if isMixing { apply() }
+    }
+
+    @discardableResult
+    public func moveChannel(id: String, relativeTo targetID: String, after: Bool = false) -> Bool {
+        guard id != targetID, let source = channels.firstIndex(where: { $0.id == id }),
+              channels.contains(where: { $0.id == targetID }) else { return false }
+        var reordered = channels
+        let channel = reordered.remove(at: source)
+        let target = reordered.firstIndex(where: { $0.id == targetID })!
+        reordered.insert(channel, at: target + (after ? 1 : 0))
+        guard reordered.map(\.id) != channels.map(\.id) else { return false }
+        let activeIDs = Set(reordered.map(\.id))
+        var order = reordered.map(\.id).makeIterator()
+        channelOrder = channelOrder.map { activeIDs.contains($0) ? order.next()! : $0 }
+        channelOrder.append(contentsOf: order)
+        preferences.saveChannelOrder(channelOrder)
+        channels = reordered
+        return true
+    }
+
+    private func sortChannels() {
+        let ranks = Dictionary(uniqueKeysWithValues: channelOrder.enumerated().map { ($0.element, $0.offset) })
+        let ordered = channels.enumerated().sorted {
+            let first = ranks[$0.element.id, default: Int.max]
+            let second = ranks[$1.element.id, default: Int.max]
+            return first == second ? $0.offset < $1.offset : first < second
+        }.map(\.element)
+        if ordered.map(\.id) != channels.map(\.id) { channels = ordered }
     }
 
     /// `devices` has already been restricted to physical outputs by discovery.

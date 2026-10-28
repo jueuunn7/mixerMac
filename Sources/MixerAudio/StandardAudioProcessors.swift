@@ -79,6 +79,10 @@ public enum StandardAudioProcessors {
     public static func register(in registry: AudioProcessorRegistry) throws {
         AUAudioUnit.registerSubclass(StereoAudioUnit.self, as: StereoAudioUnit.component,
             name: "mixerMac: Stereo", version: 1)
+        AUAudioUnit.registerSubclass(CrunchAudioUnit.self, as: CrunchAudioUnit.component, name: "mixerMac: Crunch", version: 1)
+        try registry.register(StandardNodeType.filter, nodeType: FilterNode.self) { FilterProcessor($0) }
+        try registry.register(StandardNodeType.crunch, nodeType: CrunchNode.self) { try CrunchProcessor($0) }
+        try registry.register(StandardNodeType.filterRouter, nodeType: FilterRouterNode.self) { FilterRouterProcessor($0) }
         try registry.register(StandardNodeType.gain, nodeType: GainNode.self) { GainProcessor(model: $0, parameter: $0.gain) }
         try registry.register(StandardNodeType.volume, nodeType: VolumeNode.self) { VolumeProcessor($0) }
         try registry.register(StandardNodeType.parametricEQ, nodeType: ParametricEQNode.self) { EQProcessor($0) }

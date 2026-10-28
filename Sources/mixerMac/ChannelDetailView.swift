@@ -20,8 +20,7 @@ struct MasterDetailView: View {
         EQDetailView(title: "Master EQ", settings: Binding(
             get: { mixer.masterEQ.detailSettings },
             set: { mixer.masterEQ.detailSettings = $0 }),
-            isMaster: true, isProcessing: mixer.isMixing, feed: mixer.masterFeed,
-            width: mixer.core.master.width.binding)
+            isMaster: true, isProcessing: mixer.isMixing, feed: mixer.masterFeed)
     }
 }
 
@@ -31,7 +30,6 @@ private struct EQDetailView: View {
     let isMaster: Bool
     let isProcessing: Bool
     let feed: PCMFeed
-    var width: Binding<Float>? = nil
     @Environment(\.dismiss) private var dismiss
     @StateObject private var detail = ChannelDetailModel()
     @DetailState private var selectedBand = 0
@@ -55,7 +53,7 @@ private struct EQDetailView: View {
                 Text("EQ RESPONSE").font(.system(size: 11, weight: .bold)).tracking(1)
                 Text("Drag bands · cyan EQ / green smoothed audio").font(.system(size: 10)).foregroundStyle(.secondary)
                 Spacer()
-                if isMaster, let width { DetailWidthControl(value: width) }
+                DetailWidthControl(value: $settings.width)
                 DetailPanControl(value: $settings.pan)
                 Text("GAIN").font(.system(size: 10, weight: .bold))
                 DetailNumberField(value: Binding(get: { Double(settings.trimDB) }, set: {

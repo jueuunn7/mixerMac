@@ -14,13 +14,16 @@ public enum StandardNodeRegistry {
             ("core.chain", { ProcessingChain(id: $0.id) }),
             ("core.channel", { Channel(id: $0.id) }),
             ("core.bus", { MixBus(id: $0.id) }),
+            (StandardNodeType.filter, { FilterNode(id: $0.id) }),
+            (StandardNodeType.crunch, { CrunchNode(id: $0.id) }),
+            (StandardNodeType.filterRouter, { FilterRouterNode(id: $0.id) }),
+            (StandardNodeType.filterBank, { ConsoleFilterBank(id: $0.id) }),
             (StandardNodeType.gain, { GainNode(id: $0.id) }),
             (StandardNodeType.volume, { VolumeNode(id: $0.id) }),
             (StandardNodeType.pan, { PanNode(id: $0.id) }),
             (StandardNodeType.width, { WidthNode(id: $0.id) }),
             (StandardNodeType.parametricEQ, { ParametricEQNode(id: $0.id) }),
             ("standard.equalizer", { Equalizer(id: $0.id) }),
-            ("standard.console-channel", { ConsoleChannel(id: $0.id) }),
             ("standard.console-bus", { ConsoleBus(id: $0.id) })
         ]
         for (typeID, factory) in definitions {
@@ -31,5 +34,27 @@ public enum StandardNodeRegistry {
                 return try factory(snapshot)
             }
         }
+        try registry.register("standard.console-channel", migrate: migrateChannel) { snapshot in
+            guard snapshot.configurationVersion == 2, snapshot.configuration.isEmpty else {
+                throw SnapshotError.incompatibleNode(snapshot.id)
+            }
+            return ConsoleChannel(id: snapshot.id)
+        }
+    }
+
+    @MainActor
+    private static func migrateChannel(_ snapshot: NodeSnapshot) throws -> NodeSnapshot {
+        guard (1...3).contains(snapshot.configurationVersion) else { return snapshot }
+        var children = snapshot.children
+        if snapshot.configurationVersion == 3 {
+            children.removeAll { $0.id == snapshot.id + ".compressor" && $0.typeID == "standard.compressor" }
+        }
+        if snapshot.configurationVersion == 1 && !children.contains(where: { $0.id == snapshot.id + ".width" }) {
+            let position = children.firstIndex(where: { $0.id == snapshot.id + ".pan" }) ?? children.count
+            children.insert(try NodeSnapshot(WidthNode(id: snapshot.id + ".width")), at: position)
+        }
+        return NodeSnapshot(id: snapshot.id, typeID: snapshot.typeID, structure: snapshot.structure,
+            configurationVersion: 2, configuration: snapshot.configuration, ports: snapshot.ports,
+            parameters: snapshot.parameters, isBypassed: snapshot.isBypassed, children: children)
     }
 }

@@ -109,3 +109,16 @@ extension GraphRenderingTests {
         #expect(abs(samples.1 - 0.2) < 0.001)
     }
 }
+
+extension GraphRenderingTests {
+    @Test(arguments: [Float(0), 1, 2]) @MainActor func channelWidthDoesNotAlterAnotherChannelsStereo(width: Float) throws {
+        let first = ConsoleChannel(id: "first")
+        let second = ConsoleChannel(id: "second")
+        first.width.setValue(width)
+        let mixer = ConsoleMixer(channels: [first, second])
+        let samples = try render(mixer.graph, output: "master", inputs: ["first": (0.4, 0.2), "second": (0.1, -0.1)], registry: StandardAudioProcessors.make())
+        #expect(abs(samples.0 - (0.4 + 0.1 * width)) < 0.001)
+        #expect(abs(samples.1 - (0.2 - 0.1 * width)) < 0.001)
+        #expect(second.width.value == 1)
+    }
+}

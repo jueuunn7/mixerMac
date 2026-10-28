@@ -67,3 +67,29 @@ struct StereoWidthTests {
         #expect(try JSONDecoder().decode(BusEQSettings.self, from: old).width == 1)
     }
 }
+
+extension StereoWidthTests {
+    @Test @MainActor func channelWidthPersistsThroughLegacySettingsAndNodeSnapshots() throws {
+        let old = Data(#"{"gains":[0,0,0,0,0,0,0,0,0,0],"volume":1,"eqEnabled":true}"#.utf8)
+        #expect(try JSONDecoder().decode(ChannelSettings.self, from: old).width == 1)
+        let suite = "mixerMac.ChannelWidth.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let app = AudioApp(id: "width.app", name: "Width", icon: nil, processes: [], isPlaying: false)
+        let channel = AppAudioChannel(app: app, defaults: defaults)
+        channel.core.width.setValue(1.35)
+        channel.settings.gains[3] = 2
+        let restored = AppAudioChannel(app: app, defaults: defaults)
+        #expect(restored.restorationError == nil)
+        #expect(restored.core.width.value == 1.35)
+        #expect(restored.settings.gains[3] == 2)
+        let data = try #require(defaults.data(forKey: "channel.\(app.id)"))
+        #expect(try JSONDecoder().decode(ChannelSettings.self, from: data).width == 1.35)
+        var master = BusEQSettings()
+        master.width = 1.6
+        master.detailSettings.gains[0] = 3
+        #expect(master.width == 1.6)
+        master.detailSettings.width = 0.5
+        #expect(master.width == 0.5)
+    }
+}

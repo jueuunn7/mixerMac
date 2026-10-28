@@ -17,6 +17,8 @@ public struct ConsolePreferences {
     public let defaults: UserDefaults
     public init(defaults: UserDefaults = .standard) { self.defaults = defaults }
 
+    public var channelOrder: [String] { defaults.stringArray(forKey: "channel.order") ?? [] }
+    public func saveChannelOrder(_ ids: [String]) { defaults.set(ids, forKey: "channel.order") }
     public var outputUID: String? { defaults.string(forKey: "output.uid") }
     public var mixerWasRunning: Bool { defaults.bool(forKey: "mixer.running") }
     public func saveOutputUID(_ uid: String) { defaults.set(uid, forKey: "output.uid") }
