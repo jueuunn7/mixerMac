@@ -82,6 +82,19 @@ struct GraphRenderingTests {
         #expect(abs(result.0 - (0.3 + 0.1 * width)) < 0.001)
         #expect(abs(result.1 - (0.3 - 0.1 * width)) < 0.001)
     }
+
+    @Test(arguments: [Float(0), 1, 2]) @MainActor func channelWidthIsIndependentAndPrecedesPan(width: Float) throws {
+        let first = ConsoleChannel(id: "first")
+        let second = ConsoleChannel(id: "second")
+        let mixer = ConsoleMixer(channels: [first, second])
+        first.width.setValue(width)
+        first.pan.setValue(0.5)
+        let result = try render(mixer.graph, output: "master",
+            inputs: ["first": (0.4, 0.2), "second": (0.05, -0.05)], registry: StandardAudioProcessors.make())
+        #expect(abs(result.0 - ((0.3 + 0.1 * width) * 0.5 + 0.05)) < 0.001)
+        #expect(abs(result.1 - (0.3 - 0.1 * width - 0.05)) < 0.001)
+        #expect(second.width.value == 1)
+    }
 }
 
 extension GraphRenderingTests {

@@ -10,7 +10,8 @@ struct ChannelDetailView: View {
     var body: some View {
         EQDetailView(title: channel.app.name, settings: $channel.settings,
             isMaster: false, isProcessing: channel.isProcessing,
-            feed: channel.isProcessing ? channel.postEQ : channel.input)
+            feed: channel.isProcessing ? channel.postEQ : channel.input,
+            width: channel.core.width.binding)
     }
 }
 
@@ -55,9 +56,9 @@ private struct EQDetailView: View {
                 Text("EQ RESPONSE").font(.system(size: 11, weight: .bold)).tracking(1)
                 Text("Drag bands · cyan EQ / green smoothed audio").font(.system(size: 10)).foregroundStyle(.secondary)
                 Spacer()
-                if isMaster, let width { DetailWidthControl(value: width) }
+                if let width { DetailWidthControl(value: width) }
                 DetailPanControl(value: $settings.pan)
-                Text("GAIN").font(.system(size: 10, weight: .bold))
+                Text(isMaster ? "GAIN" : "TRIM").font(.system(size: 10, weight: .bold))
                 DetailNumberField(value: Binding(get: { Double(settings.trimDB) }, set: {
                     guard $0.isFinite else { return }; settings.trimDB = Float(min(24, max(-24, $0)))
                 }), label: isMaster ? "Master gain" : "Channel trim", digits: 1).frame(width: 65)

@@ -20,7 +20,6 @@ public enum StandardNodeRegistry {
             (StandardNodeType.width, { WidthNode(id: $0.id) }),
             (StandardNodeType.parametricEQ, { ParametricEQNode(id: $0.id) }),
             ("standard.equalizer", { Equalizer(id: $0.id) }),
-            ("standard.console-channel", { ConsoleChannel(id: $0.id) }),
             ("standard.console-bus", { ConsoleBus(id: $0.id) })
         ]
         for (typeID, factory) in definitions {
@@ -31,5 +30,24 @@ public enum StandardNodeRegistry {
                 return try factory(snapshot)
             }
         }
+        try registry.register("standard.console-channel", migrate: migrateChannel) { snapshot in
+            guard snapshot.configurationVersion == 2, snapshot.configuration.isEmpty else {
+                throw SnapshotError.incompatibleNode(snapshot.id)
+            }
+            return ConsoleChannel(id: snapshot.id)
+        }
+    }
+
+    @MainActor
+    private static func migrateChannel(_ snapshot: NodeSnapshot) throws -> NodeSnapshot {
+        guard snapshot.configurationVersion == 1 else { return snapshot }
+        var children = snapshot.children
+        if !children.contains(where: { $0.id == snapshot.id + ".width" }) {
+            let position = children.firstIndex(where: { $0.id == snapshot.id + ".pan" }) ?? children.count
+            children.insert(try NodeSnapshot(WidthNode(id: snapshot.id + ".width")), at: position)
+        }
+        return NodeSnapshot(id: snapshot.id, typeID: snapshot.typeID, structure: snapshot.structure,
+            configurationVersion: 2, configuration: snapshot.configuration, ports: snapshot.ports,
+            parameters: snapshot.parameters, isBypassed: snapshot.isBypassed, children: children)
     }
 }

@@ -11,30 +11,20 @@ enum ConsoleLayout {
     static let windowWidth: CGFloat = 1000
     static let minimumWindowWidth: CGFloat = 960
     static let windowHeight: CGFloat = stripHeight + 16 + 61
-    static let appFaderHeight: CGFloat = 220
+    static let appFaderHeight: CGFloat = 187
     static let eqRowHeight: CGFloat = 45
     static let stripWidth: CGFloat = 150
     static let masterStereoRowHeight: CGFloat = 44
-    static let masterMeterHeight: CGFloat = 168
+    static let masterMeterHeight: CGFloat = 160
     static let stripTopInset: CGFloat = 12
     static let stripBottomInset: CGFloat = 10
     static let headerHeight: CGFloat = 35
     static let gainHeight: CGFloat = 53
     static let channelSpacing: CGFloat = 7
-    static let channelControlsGap: CGFloat = 10
-    static let channelControlsHeight: CGFloat = 70
+    static let channelControlsHeight: CGFloat = 108
     static let eqBankInset: CGFloat = 4
-    static let eqBankHeight = eqRowHeight * 10 + eqBankInset * 2
-    static let appEQTop = stripTopInset + headerHeight + channelSpacing + gainHeight + channelSpacing
-    static let appControlsTop = appEQTop + eqBankHeight + channelSpacing * 2 + channelControlsGap
-    static let appFaderTop = appControlsTop + channelControlsHeight + channelSpacing
     static let masterSpacing: CGFloat = 5
     static let masterWaveformHeight: CGFloat = 50
-    static let masterEQTop = stripTopInset + headerHeight + gainHeight + masterWaveformHeight + masterSpacing * 3
-    static let masterMeterBottom = stripHeight - stripBottomInset - 13 - masterSpacing
-    static let masterMeterTop = masterMeterBottom - masterMeterHeight
-    static let masterControlsBottom = masterMeterTop - masterSpacing
-    static let masterControlsTop = masterControlsBottom - masterStereoRowHeight - 25
 }
 
 private enum ConsolePalette {
@@ -136,16 +126,10 @@ struct AppConsoleStrip: View {
                     .font(.system(size: 10, weight: .semibold)).lineLimit(1)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .help(channel.app.name)
-                Button("Detail") { showingDetail = true }
-                    .font(.system(size: 8, weight: .semibold))
-                    .buttonStyle(.plain)
-                    .padding(.horizontal, 4).padding(.vertical, 5)
-                    .background(.black.opacity(0.07), in: RoundedRectangle(cornerRadius: 3))
-                    .accessibilityLabel("\(channel.app.name) Detail")
             }.padding(.leading, 18).frame(height: ConsoleLayout.headerHeight)
 
-            ConsolePrintedKnob(value: channel.core.equalizer.gain.binding, label: "GAIN", trim: true)
-                .frame(height: ConsoleLayout.gainHeight).accessibilityLabel("\(channel.app.name) gain")
+            ConsolePrintedKnob(value: channel.core.equalizer.gain.binding, label: "TRIM", trim: true)
+                .frame(height: ConsoleLayout.gainHeight).accessibilityLabel("\(channel.app.name) trim")
 
             VStack(spacing: 0) {
                 ForEach(Array(EQSettings.frequencies.indices.reversed()), id: \.self) { band in
@@ -156,23 +140,27 @@ struct AppConsoleStrip: View {
             }
             .padding(.vertical, ConsoleLayout.eqBankInset)
             .frame(maxWidth: .infinity)
-            // Keep the controls anchored to the EQ bank when footer labels
-            // are removed or the window gains extra vertical space.
-            Color.clear.frame(height: ConsoleLayout.channelControlsGap).accessibilityHidden(true)
-
-            HStack(spacing: 3) {
-                VStack(spacing: 4) {
-                    ConsoleButton(title: "MUTE", active: channel.isMuted, color: .red) { channel.isMuted.toggle() }
-                    ConsoleButton(title: "SOLO", active: channel.isSolo, color: .yellow) { channel.isSolo.toggle() }
-                }.frame(width: 54)
-                VStack(spacing: 6) {
+            VStack(spacing: 8) {
+                HStack(spacing: 20) {
                     ConsolePanControl(value: channel.core.pan.binding, compact: true)
                         .accessibilityLabel("\(channel.app.name) pan")
+                    ConsoleWidthControl(value: channel.core.width.binding)
+                        .accessibilityLabel("\(channel.app.name) stereo width")
+                }
+                HStack(spacing: 8) {
+                    ConsoleButton(title: "MUTE", active: channel.isMuted, color: .red) { channel.isMuted.toggle() }
+                    ConsoleButton(title: "SOLO", active: channel.isSolo, color: .yellow) { channel.isSolo.toggle() }
+                }.frame(width: 116)
+                HStack(spacing: 8) {
                     ConsoleResetButton {
                         channel.settings.gains = [Float](repeating: 0, count: EQSettings.frequencies.count)
                     }.accessibilityLabel("Reset \(channel.app.name) EQ").help("Reset this app's EQ")
-                }
-            }.frame(height: ConsoleLayout.channelControlsHeight)
+                    Button("DETAIL") { showingDetail = true }
+                        .buttonStyle(ConsolePushButtonStyle())
+                        .accessibilityLabel("\(channel.app.name) Detail")
+                        .help("Open \(channel.app.name) detail")
+                }.frame(width: 116)
+            }.frame(maxWidth: .infinity).frame(height: ConsoleLayout.channelControlsHeight)
 
             HStack(alignment: .top, spacing: 8) {
                 LiveConsoleMeter(metrics: channel.metrics).frame(width: 36, height: 137).padding(.top, 14)
@@ -202,11 +190,6 @@ struct MasterConsoleStrip: View {
                 ConsoleScrew()
                 Text("MASTER").font(.system(size: 11, weight: .bold)).tracking(0.5)
                 Spacer(minLength: 0)
-                Button("Detail") { showingDetail = true }
-                    .font(.system(size: 8, weight: .semibold)).buttonStyle(.plain)
-                    .padding(.horizontal, 4).padding(.vertical, 5)
-                    .background(.black.opacity(0.07), in: RoundedRectangle(cornerRadius: 3))
-                    .accessibilityLabel("Master Detail")
             }.frame(height: ConsoleLayout.headerHeight)
 
             ConsolePrintedKnob(value: mixer.core.master.equalizer.gain.binding, label: "GAIN", trim: true)
@@ -230,11 +213,17 @@ struct MasterConsoleStrip: View {
                         .accessibilityLabel("Master pan")
                     ConsoleWidthControl(value: mixer.core.master.width.binding)
                 }
-                ConsoleResetButton {
-                    mixer.masterEQ.gains = [Float](repeating: 0, count: BusEQSettings.frequencies.count)
-                }.accessibilityLabel("Reset master EQ").help("Reset master EQ")
+                HStack(spacing: 8) {
+                    ConsoleResetButton {
+                        mixer.masterEQ.gains = [Float](repeating: 0, count: BusEQSettings.frequencies.count)
+                    }.accessibilityLabel("Reset master EQ").help("Reset master EQ")
+                    Button("DETAIL") { showingDetail = true }
+                        .buttonStyle(ConsolePushButtonStyle())
+                        .accessibilityLabel("Master Detail")
+                        .help("Open master detail")
+                }.frame(width: 116)
             }
-            .frame(maxWidth: .infinity).frame(height: ConsoleLayout.masterStereoRowHeight + 25)
+            .frame(maxWidth: .infinity).frame(height: ConsoleLayout.masterStereoRowHeight + 30)
             LiveStereoMasterMeter(left: mixer.masterLeftMetrics, right: mixer.masterRightMetrics)
                 .frame(height: ConsoleLayout.masterMeterHeight).padding(.horizontal, 14)
             Text("MASTER OUT")
@@ -244,7 +233,7 @@ struct MasterConsoleStrip: View {
         }
         .padding(.horizontal, 8).padding(.top, ConsoleLayout.stripTopInset).padding(.bottom, ConsoleLayout.stripBottomInset)
         .frame(width: ConsoleLayout.stripWidth, height: ConsoleLayout.stripHeight, alignment: .top)
-        .background(ConsoleChannelPlate(master: true))
+        .background(ConsoleChannelPlate())
         .sheet(isPresented: $showingDetail) { MasterDetailView(mixer: mixer) }
     }
 
@@ -257,17 +246,7 @@ struct MasterConsoleStrip: View {
 struct ConsoleResetButton: View {
     let action: () -> Void
     var body: some View {
-        Button(action: action) {
-            Text("RESET")
-                .font(.system(size: 7, weight: .bold))
-                .frame(width: 30, height: 19)
-                .foregroundStyle(Color(white: 0.15))
-                .background(LinearGradient(colors: [Color(white: 0.86), Color(white: 0.69)],
-                                           startPoint: .top, endPoint: .bottom),
-                            in: RoundedRectangle(cornerRadius: 3))
-                .overlay(RoundedRectangle(cornerRadius: 3).stroke(.black.opacity(0.35), lineWidth: 0.6))
-                .shadow(color: .black.opacity(0.18), radius: 0.7, y: 1)
-        }.buttonStyle(.plain)
+        Button("RESET", action: action).buttonStyle(ConsolePushButtonStyle())
     }
 }
 
@@ -393,16 +372,35 @@ struct ConsoleButton: View {
     let color: Color
     let action: () -> Void
     var body: some View {
-        Button(action: action) {
-            HStack(spacing: 4) {
-                Circle().fill(LinearGradient(colors: [Color(white: 0.23), Color(white: 0.035)], startPoint: .topLeading, endPoint: .bottomTrailing))
-                    .frame(width: 16, height: 16)
-                    .overlay(Circle().stroke(active ? color : .black.opacity(0.6), lineWidth: 3))
-                    .shadow(color: .black.opacity(0.3), radius: 1, y: 1)
-                Text(title).font(.system(size: 7, weight: .black))
-            }.foregroundStyle(ConsolePalette.ink).frame(maxWidth: .infinity).frame(height: 24)
-        }.buttonStyle(.plain)
+        Button(title, action: action)
+        .buttonStyle(ConsolePushButtonStyle(active: active, color: color))
         .accessibilityLabel(title)
         .accessibilityValue(active ? "On" : "Off")
+    }
+}
+
+private struct ConsolePushButtonStyle: ButtonStyle {
+    var active = false
+    var color = ConsolePalette.blue
+    @Environment(\.isEnabled) private var enabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: 4) {
+            Circle()
+                .fill(LinearGradient(colors: configuration.isPressed
+                    ? [Color(white: 0.035), Color(white: 0.13)]
+                    : [Color(white: 0.23), Color(white: 0.035)],
+                    startPoint: .topLeading, endPoint: .bottomTrailing))
+                .frame(width: 16, height: 16)
+                .overlay(Circle().stroke(active || configuration.isPressed ? color : .black.opacity(0.6), lineWidth: 3))
+                .shadow(color: .black.opacity(0.3), radius: 1, y: configuration.isPressed ? 0 : 1)
+            configuration.label
+                .font(.system(size: 7, weight: .black)).fixedSize()
+        }
+        .foregroundStyle(ConsolePalette.ink)
+        .frame(maxWidth: .infinity, alignment: .leading).frame(height: 24)
+        .contentShape(Rectangle())
+        .offset(y: configuration.isPressed ? 1 : 0)
+        .opacity(enabled ? 1 : 0.5)
     }
 }
