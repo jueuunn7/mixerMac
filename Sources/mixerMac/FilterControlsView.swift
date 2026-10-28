@@ -56,18 +56,20 @@ private struct ConsoleFilterBankControls: View {
                 }
                     .frame(width: 44).accessibilityLabel("Filter \(number) enabled")
             }
-            HStack(spacing: 3) {
-                ForEach(Array(["LPF", "BPF", "HPF"].enumerated()), id: \.offset) { index, title in
-                    ConsoleButton(title: title, active: selectedMode == index, color: ConsolePalette.blue, stacked: true) {
-                        selectedMode = index
-                        bank.filter.mode.setValue(Float(index))
-                    }.accessibilityLabel("Filter \(number) \(title)")
-                }
+            ConsoleFilterEffectSelector(parameter: bank.filter.mode, number: number)
+            if selectedMode <= ConsoleFilterEffect.filterModes.upperBound {
+                ConsoleFilterKnob(parameter: bank.filter.frequency, title: "FREQUENCY", accessibilityName: "Filter \(number) frequency", logarithmic: true, suffix: "Hz", large: true)
+            } else {
+                ConsoleFilterKnob(parameter: bank.filter.time, title: "TIME", accessibilityName: "Filter \(number) time", suffix: "s", large: true)
             }
-            ConsoleFilterKnob(parameter: bank.filter.frequency, title: "FREQUENCY", accessibilityName: "Filter \(number) frequency", logarithmic: true, suffix: "Hz", large: true)
             HStack(spacing: 4) {
-                ConsoleFilterKnob(parameter: bank.filter.resonance, title: "RES", accessibilityName: "Filter \(number) resonance", scale: 100, suffix: "%")
-                ConsoleFilterKnob(parameter: bank.crunch.amount, title: "CRUNCH", accessibilityName: "Filter \(number) crunch", scale: 100, suffix: "%")
+                if selectedMode <= ConsoleFilterEffect.filterModes.upperBound {
+                    ConsoleFilterKnob(parameter: bank.filter.resonance, title: "RES", accessibilityName: "Filter \(number) resonance", scale: 100, suffix: "%")
+                    ConsoleFilterKnob(parameter: bank.crunch.amount, title: "CRUNCH", accessibilityName: "Filter \(number) crunch", scale: 100, suffix: "%")
+                } else {
+                    ConsoleFilterKnob(parameter: bank.filter.mix, title: "MIX", accessibilityName: "Filter \(number) mix", scale: 100, suffix: "%")
+                    ConsoleFilterKnob(parameter: bank.filter.resonance, title: selectedMode == ConsoleFilterEffect.echo ? "FEEDBACK" : "DAMPING", accessibilityName: "Filter \(number) feedback", scale: 100, suffix: "%")
+                }
             }
         }
         .onAppear(perform: syncFromModel)
@@ -77,6 +79,38 @@ private struct ConsoleFilterBankControls: View {
     private func syncFromModel() {
         bypassed = bank.isBypassed
         selectedMode = Int(bank.filter.mode.value)
+    }
+}
+
+private struct ConsoleFilterEffectSelector: View {
+    let parameter: Parameter
+    let number: Int
+    @State private var selection = 0
+
+    private var knobValue: Binding<Float> {
+        Binding(get: { Float(selection) * 12 - 24 }, set: { value in
+            let next = min(ConsoleFilterEffect.labels.count - 1, max(0, Int(((value + 24) / 12).rounded())))
+            selection = next
+            parameter.setValue(Float(next))
+        })
+    }
+
+    var body: some View {
+        VStack(spacing: 5) {
+            Text("EFFECT").font(.system(size: 8, weight: .bold)).tracking(0.6)
+            ConsoleEQKnob(value: knobValue, showsScale: true)
+                .scaleEffect(1.15)
+                .frame(width: 58, height: 58)
+            Text(ConsoleFilterEffect.labels[selection])
+                .font(.system(size: 8, weight: .black, design: .monospaced))
+                .frame(width: 58)
+        }
+        .onAppear { selection = Int(parameter.value) }
+        .onReceive(parameter.changes) { selection = Int(parameter.value) }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Filter \(number) effect")
+        .accessibilityValue(ConsoleFilterEffect.labels[selection])
+        .help("Filter \(number) effect · drag vertically to select")
     }
 }
 
