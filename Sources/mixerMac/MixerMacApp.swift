@@ -5,7 +5,10 @@ import AppKit
 @main
 struct MixerMacApp: App {
     @NSApplicationDelegateAdaptor(MixerMacAppDelegate.self) private var appDelegate
-    init() { ConsolePreferences.migrateLegacySettings() }
+    init() {
+        ConsolePreferences.migrateLegacySettings()
+        ConsolePreferences.standardizeEQFrequencies()
+    }
 
     var body: some Scene {
         Window("mixerMac", id: "main") {

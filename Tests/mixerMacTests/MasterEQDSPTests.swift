@@ -38,7 +38,7 @@ struct MasterEQDSPTests {
 
     @Test @MainActor func masterBandsMatchAppEQ() {
         #expect(BusEQSettings.frequencies == EQSettings.frequencies)
-        #expect(BusEQSettings.labels == ["31.5", "63", "125", "250", "500", "1k", "2k", "4k", "8k", "16k"])
+        #expect(BusEQSettings.labels == ["32", "63", "125", "250", "500", "1k", "2k", "4k", "8k", "16k"])
         let eq = AVAudioUnitEQ(numberOfBands: BusEQSettings.frequencies.count)
         BusEQSettings.configure(eq)
         let settings = BusEQSettings()

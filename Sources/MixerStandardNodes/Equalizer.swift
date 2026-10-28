@@ -1,8 +1,8 @@
 import MixerCore
 
 public struct EQSettings: Equatable, Sendable {
-    public static let frequencies: [Float] = [31.5, 63, 125, 250, 500, 1000, 2000, 4000, 8000, 16000]
-    public static let labels = ["31.5", "63", "125", "250", "500", "1k", "2k", "4k", "8k", "16k"]
+    public static let frequencies: [Float] = [32, 63, 125, 250, 500, 1000, 2000, 4000, 8000, 16000]
+    public static let labels = ["32", "63", "125", "250", "500", "1k", "2k", "4k", "8k", "16k"]
     public var gains: [Float]
     public var frequencies: [Float]
     public var bandwidths: [Float]
