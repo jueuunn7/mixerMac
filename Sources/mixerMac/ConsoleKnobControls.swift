@@ -144,7 +144,7 @@ struct ConsolePrintedKnob: View {
     var body: some View {
         GeometryReader { geometry in
             let center = CGPoint(x: geometry.size.width / 2,
-                                 y: geometry.size.height / 2 - (trim ? 3 : 2.5))
+                                 y: geometry.size.height / 2 - 2.5)
             ZStack(alignment: .topLeading) {
                 Canvas { context, _ in
                     let ink = Color(white: 0.12)
@@ -164,7 +164,7 @@ struct ConsolePrintedKnob: View {
                     .position(center)
             }
         }
-        .frame(height: trim ? 53 : 42)
+        .frame(height: ConsoleLayout.eqRowHeight)
         .foregroundStyle(Color(white: 0.12))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(label.replacingOccurrences(of: "\n", with: " ") + " gain")

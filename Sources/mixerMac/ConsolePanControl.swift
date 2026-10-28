@@ -35,20 +35,42 @@ struct ConsolePanControl: View {
     }
 }
 
-/// Identical cap size, baseline, and captions for the two master controls.
+/// One shared two-column grid for channel and master stereo controls.
+struct ConsoleStereoPair: View {
+    @Binding var pan: Float
+    @Binding var width: Float
+    let accessibilityPrefix: String
+
+    var body: some View {
+        HStack(spacing: 0) {
+            ConsolePanControl(value: $pan, compact: true)
+                .accessibilityLabel("\(accessibilityPrefix) pan")
+            ConsoleWidthControl(value: $width)
+                .accessibilityLabel("\(accessibilityPrefix) stereo width")
+        }
+        .frame(width: ConsoleLayout.controlBankWidth, height: ConsoleLayout.masterStereoRowHeight)
+    }
+}
+
+/// Explicit centres keep the cap and its caption independent of text width.
 struct ConsoleStereoDial: View {
     @Binding var value: Float
     let title: String
     let readout: String
     var body: some View {
-        VStack(spacing: 4) {
-            ConsoleEQKnob(value: $value, trim: true, tickRadius: 18)
-                .frame(width: 28, height: 28)
-            HStack(spacing: 3) {
-                Text(title).font(.system(size: 7, weight: .bold))
-                Text(readout).font(.system(size: 7, design: .monospaced))
-            }.fixedSize()
-        }.frame(width: 46, height: 44)
+        GeometryReader { geometry in
+            ZStack(alignment: .topLeading) {
+                ConsoleEQKnob(value: $value, trim: true, tickRadius: 18)
+                    .position(x: geometry.size.width / 2, y: 20)
+                HStack(spacing: 3) {
+                    Text(title).font(.system(size: 7, weight: .bold))
+                    Text(readout).font(.system(size: 7, design: .monospaced))
+                }
+                .fixedSize()
+                .position(x: geometry.size.width / 2, y: 45)
+            }
+        }
+        .frame(width: ConsoleLayout.controlBankWidth / 2, height: ConsoleLayout.masterStereoRowHeight)
     }
 }
 

@@ -14,14 +14,15 @@ enum ConsoleLayout {
     static let appFaderHeight: CGFloat = 187
     static let eqRowHeight: CGFloat = 45
     static let stripWidth: CGFloat = 150
-    static let masterStereoRowHeight: CGFloat = 44
+    static let masterStereoRowHeight: CGFloat = 52
+    static let controlBankWidth: CGFloat = 128
     static let masterMeterHeight: CGFloat = 160
     static let stripTopInset: CGFloat = 12
     static let stripBottomInset: CGFloat = 10
     static let headerHeight: CGFloat = 35
-    static let gainHeight: CGFloat = 53
+    static let gainHeight: CGFloat = 45
     static let channelSpacing: CGFloat = 7
-    static let channelControlsHeight: CGFloat = 108
+    static let channelControlsHeight: CGFloat = 116
     static let eqBankInset: CGFloat = 4
     static let masterSpacing: CGFloat = 5
     static let masterWaveformHeight: CGFloat = 50
@@ -141,16 +142,12 @@ struct AppConsoleStrip: View {
             .padding(.vertical, ConsoleLayout.eqBankInset)
             .frame(maxWidth: .infinity)
             VStack(spacing: 8) {
-                HStack(spacing: 20) {
-                    ConsolePanControl(value: channel.core.pan.binding, compact: true)
-                        .accessibilityLabel("\(channel.app.name) pan")
-                    ConsoleWidthControl(value: channel.core.width.binding)
-                        .accessibilityLabel("\(channel.app.name) stereo width")
-                }
+                ConsoleStereoPair(pan: channel.core.pan.binding, width: channel.core.width.binding,
+                    accessibilityPrefix: channel.app.name)
                 HStack(spacing: 8) {
                     ConsoleButton(title: "MUTE", active: channel.isMuted, color: .red) { channel.isMuted.toggle() }
                     ConsoleButton(title: "SOLO", active: channel.isSolo, color: .yellow) { channel.isSolo.toggle() }
-                }.frame(width: 116)
+                }.frame(width: ConsoleLayout.controlBankWidth)
                 HStack(spacing: 8) {
                     ConsoleResetButton {
                         channel.settings.gains = [Float](repeating: 0, count: EQSettings.frequencies.count)
@@ -159,7 +156,7 @@ struct AppConsoleStrip: View {
                         .buttonStyle(ConsolePushButtonStyle())
                         .accessibilityLabel("\(channel.app.name) Detail")
                         .help("Open \(channel.app.name) detail")
-                }.frame(width: 116)
+                }.frame(width: ConsoleLayout.controlBankWidth)
             }.frame(maxWidth: .infinity).frame(height: ConsoleLayout.channelControlsHeight)
 
             HStack(alignment: .top, spacing: 8) {
@@ -208,11 +205,8 @@ struct MasterConsoleStrip: View {
             Spacer(minLength: 0)
 
             VStack(spacing: 6) {
-                HStack(spacing: 20) {
-                    ConsolePanControl(value: mixer.core.master.pan.binding, compact: true)
-                        .accessibilityLabel("Master pan")
-                    ConsoleWidthControl(value: mixer.core.master.width.binding)
-                }
+                ConsoleStereoPair(pan: mixer.core.master.pan.binding, width: mixer.core.master.width.binding,
+                    accessibilityPrefix: "Master")
                 HStack(spacing: 8) {
                     ConsoleResetButton {
                         mixer.masterEQ.gains = [Float](repeating: 0, count: BusEQSettings.frequencies.count)
@@ -221,7 +215,7 @@ struct MasterConsoleStrip: View {
                         .buttonStyle(ConsolePushButtonStyle())
                         .accessibilityLabel("Master Detail")
                         .help("Open master detail")
-                }.frame(width: 116)
+                }.frame(width: ConsoleLayout.controlBankWidth)
             }
             .frame(maxWidth: .infinity).frame(height: ConsoleLayout.masterStereoRowHeight + 30)
             LiveStereoMasterMeter(left: mixer.masterLeftMetrics, right: mixer.masterRightMetrics)
