@@ -28,7 +28,165 @@ private final class TestAudioCapture: AudioCapturing {
     func stop() { stops += 1 }
 }
 
+@MainActor
+private final class TestChannelProcessing {
+    var failingIDs: Set<String> = []
+    var ownProcesses: [AudioObjectID] = [99]
+    private(set) var starts: [String] = []
+
+    func start(_ channel: AppAudioChannel, output: OutputDevice) throws {
+        starts.append(channel.id)
+        if failingIDs.contains(channel.id) { throw TestAudioCapture.Failure.unavailable }
+        channel.isProcessing = true
+        channel.message = "LIVE"
+    }
+}
+
 struct AudioRecoveryTests {
+    @MainActor
+    private func withMixer(_ test: (MixerConsoleModel, TestAudioCapture, TestChannelProcessing) throws -> Void) throws {
+        let suite = "mixerMac.AudioRecovery.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let capture = TestAudioCapture()
+        let processing = TestChannelProcessing()
+        let model = MixerConsoleModel(preferences: ConsolePreferences(defaults: defaults),
+            processChannel: processing.start,
+            discoverOwnProcesses: { processing.ownProcesses },
+            makeCapture: { _, _ in capture })
+        defer { model.shutdown() }
+        try test(model, capture, processing)
+    }
+
+    @MainActor
+    private func refresh(_ model: MixerConsoleModel, appIDs: [String]) {
+        let apps = appIDs.enumerated().map { index, id in
+            AudioApp(id: id, name: id, icon: nil, processes: [AudioObjectID(index + 11)], isPlaying: false)
+        }
+        model.refresh(apps: apps, devices: [OutputDevice(id: 42, name: "Test Output", uid: "test-output")],
+            defaultOutputID: 42)
+    }
+
+    @Test @MainActor func masterMeterFailureDoesNotStopPlaybackAndCanRecover() throws {
+        try withMixer { model, capture, processing in
+            refresh(model, appIDs: ["first"])
+            capture.processFailures = 2
+            model.toggleMixing()
+            let channel = try #require(model.channels.first)
+            #expect(model.isMixing)
+            #expect(channel.isProcessing)
+            #expect(model.status.contains("Master meter could not reconnect"))
+
+            refresh(model, appIDs: ["first"])
+            #expect(model.isMixing)
+            #expect(channel.isProcessing)
+            #expect(model.status.contains("Master meter could not reconnect"))
+            refresh(model, appIDs: ["first"])
+            #expect(!model.status.contains("Master meter could not reconnect"))
+            #expect(processing.starts == ["first"])
+        }
+    }
+
+    @Test(arguments: [false, true]) @MainActor
+    func failedNewChannelLeavesExistingPlaybackAndErrorSurvivesUntilResolved(removeFailedApp: Bool) throws {
+        try withMixer { model, _, processing in
+            refresh(model, appIDs: ["first"])
+            model.toggleMixing()
+            processing.failingIDs = ["second"]
+            refresh(model, appIDs: ["first", "second"])
+            let first = try #require(model.channels.first { $0.id == "first" })
+            let second = try #require(model.channels.first { $0.id == "second" })
+            #expect(model.isMixing)
+            #expect(first.isProcessing)
+            #expect(!second.isProcessing)
+            #expect(model.status.contains("Could not connect second"))
+
+            refresh(model, appIDs: ["first", "second"])
+            #expect(model.isMixing)
+            #expect(model.status.contains("Could not connect second"))
+            #expect(processing.starts.filter { $0 == "first" }.count == 1)
+            #expect(processing.starts.filter { $0 == "second" }.count == 2)
+
+            processing.failingIDs = []
+            refresh(model, appIDs: removeFailedApp ? ["first"] : ["first", "second"])
+            #expect(model.isMixing)
+            #expect(first.isProcessing)
+            if removeFailedApp { #expect(model.channels.count == 1) }
+            else { #expect(second.isProcessing) }
+            #expect(!model.status.contains("Could not connect"))
+        }
+    }
+
+    @Test @MainActor func playbackStartupErrorSurvivesRefreshAndClearsOnSuccessfulStart() throws {
+        try withMixer { model, _, processing in
+            refresh(model, appIDs: ["first"])
+            processing.failingIDs = ["first"]
+            model.toggleMixing()
+            #expect(!model.isMixing)
+            let failure = model.status
+            #expect(failure.contains("Mixer could not start"))
+            refresh(model, appIDs: ["first"])
+            #expect(model.status == failure)
+
+            processing.failingIDs = []
+            model.toggleMixing()
+            #expect(model.isMixing)
+            #expect(!model.status.contains("Mixer could not start"))
+        }
+    }
+
+    @Test @MainActor func masterMeterErrorDoesNotHideAChannelError() throws {
+        try withMixer { model, capture, processing in
+            refresh(model, appIDs: ["first"])
+            model.toggleMixing()
+            processing.failingIDs = ["second"]
+            processing.ownProcesses = [100]
+            capture.processFailures = 1
+            refresh(model, appIDs: ["first", "second"])
+            #expect(model.isMixing)
+            #expect(model.status.contains("Could not connect second"))
+            #expect(model.status.contains("Master meter could not reconnect"))
+            refresh(model, appIDs: ["first", "second"])
+            #expect(model.status.contains("Could not connect second"))
+            #expect(!model.status.contains("Master meter could not reconnect"))
+            model.toggleMixing()
+            #expect(!model.isMixing)
+            #expect(!model.status.contains("Could not connect"))
+        }
+    }
+
+    @Test @MainActor func failedMasterResetRetriesWhilePlaybackRemainsStopped() throws {
+        try withMixer { model, capture, _ in
+            refresh(model, appIDs: ["first"])
+            model.toggleMixing()
+            capture.processFailures = 1
+            model.toggleMixing()
+            #expect(!model.isMixing)
+            #expect(model.status.contains("Master meter could not reconnect"))
+            refresh(model, appIDs: ["first"])
+            #expect(!model.isMixing)
+            #expect(!model.status.contains("Master meter could not reconnect"))
+            #expect(capture.processUpdates.count == 3)
+            #expect(capture.processUpdates.last == .some(nil))
+        }
+    }
+
+    @Test @MainActor func obsoleteMasterErrorClearsWhenTheOriginalRouteBecomesCurrentAgain() throws {
+        try withMixer { model, capture, processing in
+            refresh(model, appIDs: ["first"])
+            model.toggleMixing()
+            processing.ownProcesses = [100]
+            capture.processFailures = 1
+            refresh(model, appIDs: ["first"])
+            #expect(model.status.contains("Master meter could not reconnect"))
+            processing.ownProcesses = [99]
+            refresh(model, appIDs: ["first"])
+            #expect(model.isMixing)
+            #expect(!model.status.contains("Master meter could not reconnect"))
+            #expect(capture.processUpdates.count == 2)
+        }
+    }
+
     @Test @MainActor func refreshRetriesFailedMasterCaptureWithoutRestartingAnActiveCapture() throws {
         let suite = "mixerMac.AudioRecovery.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suite))
@@ -37,11 +195,11 @@ struct AudioRecoveryTests {
         failed.startFails = true
         let recovered = TestAudioCapture()
         var masterCreations = 0
-        let model = MixerConsoleModel(preferences: ConsolePreferences(defaults: defaults)) { _, processes in
+        let model = MixerConsoleModel(preferences: ConsolePreferences(defaults: defaults), makeCapture: { _, processes in
             guard processes == nil else { return TestAudioCapture() }
             masterCreations += 1
             return masterCreations == 1 ? failed : recovered
-        }
+        })
         defer { model.shutdown() }
 
         model.start()
