@@ -7,13 +7,14 @@
 #include <time.h>
 
 #define CAPACITY 65536u
-#define TARGET 4096u
+#define TARGET 512u
 #define SINC_TAPS 64u
 #define SINC_PHASES 1024u
-#define CLOCK_DEADBAND 512.0
+#define CLOCK_DEADBAND 128.0
 struct mixerMacFIFO {
     float left[CAPACITY], right[CAPACITY];
     atomic_ullong read, write;
+    atomic_uint inputQuantum;
     double fraction; // only touched by the single output render callback
     bool primed;
     _Atomic(float) targetPan;
@@ -28,6 +29,7 @@ struct mixerMacFIFO {
 mixerMacFIFO *mixerMacFIFOCreate(void) {
     mixerMacFIFO *fifo = calloc(1, sizeof(mixerMacFIFO));
     if (!fifo) return NULL;
+    atomic_init(&fifo->inputQuantum, 0);
     atomic_init(&fifo->targetPan, 0);
     atomic_init(&fifo->targetMasterPan, 0);
     atomic_init(&fifo->targetMasterWidth, 1);
@@ -81,6 +83,9 @@ void mixerMacFIFOWrite(mixerMacFIFO *fifo, const AudioBufferList *buffers) {
     // reserve also prevents the producer overwriting history at a ring wrap.
     uint64_t freeFrames = (CAPACITY - SINC_TAPS) - (write - read);
     if (frames > freeFrames) frames = (uint32_t)freeFrames;
+    // Record the input callback size so ordinary callback batching does not
+    // look like clock drift when the input and output use different quanta.
+    if (frames) atomic_store_explicit(&fifo->inputQuantum, frames, memory_order_relaxed);
     for (uint32_t i = 0; i < frames; ++i) {
         fifo->left[(write + i) % CAPACITY] = left[i * strideL];
         fifo->right[(write + i) % CAPACITY] = right[i * strideR + offsetR];
@@ -93,12 +98,18 @@ void mixerMacFIFORender(mixerMacFIFO *fifo, uint32_t frames, AudioBufferList *bu
     uint64_t read = atomic_load_explicit(&fifo->read, memory_order_relaxed);
     const uint64_t write = atomic_load_explicit(&fifo->write, memory_order_acquire);
     uint64_t available = write - read;
-    if (!fifo->primed && available >= TARGET) fifo->primed = true;
+    const uint32_t inputQuantum = atomic_load_explicit(&fifo->inputQuantum, memory_order_relaxed);
+    const double quantum = fmax((double)inputQuantum, (double)frames);
+    // Reserve one callback plus the sinc's right wing. Large device callbacks
+    // need more than the 512-frame minimum to render without periodic gaps.
+    const double target = fmax(TARGET, quantum + SINC_TAPS / 2 + 1);
+    const double deadband = fmax(CLOCK_DEADBAND, quantum);
+    if (!fifo->primed && available >= target) fifo->primed = true;
     // Ignore ordinary callback batching rather than continually resampling
     // equal-rate audio. Actual sustained clock drift is corrected slowly.
-    double error = (double)available - TARGET;
-    double correction = fabs(error) <= CLOCK_DEADBAND ? 0 : error - copysign(CLOCK_DEADBAND, error);
-    double step = 1 + fmax(-0.001, fmin(0.001, correction / (TARGET * 2000.0)));
+    double error = (double)available - target;
+    double correction = fabs(error) <= deadband ? 0 : error - copysign(deadband, error);
+    double step = 1 + fmax(-0.001, fmin(0.001, correction / (target * 2000.0)));
     float targetPan = atomic_load_explicit(&fifo->targetPan, memory_order_relaxed);
     float targetMasterPan = atomic_load_explicit(&fifo->targetMasterPan, memory_order_relaxed);
     float targetMasterWidth = atomic_load_explicit(&fifo->targetMasterWidth, memory_order_relaxed);

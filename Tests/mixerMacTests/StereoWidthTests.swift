@@ -10,9 +10,9 @@ struct StereoWidthTests {
     private func rendered(width: Float, left: Float = 0.25, right: Float = -0.5,
                           appPan: Float = 0, masterPan: Float = 0) throws -> (Float, Float) {
         let format = try #require(AVAudioFormat(standardFormatWithSampleRate: 48_000, channels: 2))
-        let input = try #require(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 4096))
-        input.frameLength = 4096
-        for sample in 0..<4096 {
+        let input = try #require(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 1024))
+        input.frameLength = 1024
+        for sample in 0..<1024 {
             input.floatChannelData![0][sample] = left
             input.floatChannelData![1][sample] = right
         }
@@ -20,6 +20,8 @@ struct StereoWidthTests {
         bridge.setPan(appPan)
         bridge.setMasterWidth(width)
         bridge.setMasterPan(masterPan)
+        // Prime two capture callbacks, including the interpolation lookahead.
+        bridge.ingest(input.audioBufferList)
         bridge.ingest(input.audioBufferList)
         let output = try #require(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 1024))
         output.frameLength = 1024
