@@ -92,12 +92,21 @@ private struct ConsoleFilterKnob: View {
 
     private var lower: Double { logarithmic ? log2(Double(parameter.range.lowerBound)) : Double(parameter.range.lowerBound) }
     private var upper: Double { logarithmic ? log2(Double(parameter.range.upperBound)) : Double(parameter.range.upperBound) }
+    // Put the musical default (1 kHz) at the physical centre of a frequency
+    // knob instead of using the geometric midpoint of 20 Hz...20 kHz (~632 Hz).
+    private var centre: Double { logarithmic ? log2(1000) : (lower + upper) / 2 }
     private var position: Binding<Float> {
         Binding(get: {
             let current = logarithmic ? log2(Double(max(parameter.range.lowerBound, value))) : Double(value)
-            return Float((current - lower) / (upper - lower) * 48 - 24)
+            let offset = current <= centre
+                ? (current - centre) / (centre - lower) * 24
+                : (current - centre) / (upper - centre) * 24
+            return Float(offset)
         }, set: {
-            let current = lower + Double(($0 + 24) / 48) * (upper - lower)
+            let offset = Double($0)
+            let current = offset <= 0
+                ? centre + offset / 24 * (centre - lower)
+                : centre + offset / 24 * (upper - centre)
             parameter.setValue(Float(logarithmic ? pow(2, current) : current))
         })
     }

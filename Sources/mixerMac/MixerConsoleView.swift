@@ -60,9 +60,7 @@ struct MixerConsoleView: View {
                     ScrollView(.horizontal) {
                         HStack(alignment: .top, spacing: 0) {
                             ForEach(Array(mixer.channels.enumerated()), id: \.element.id) { index, channel in
-                                AppConsoleStrip(channel: channel, index: index + 1, filters: mixer.filters) { sourceID, after in
-                                    mixer.moveChannel(id: sourceID, relativeTo: channel.id, after: after)
-                                }
+                                AppConsoleStrip(channel: channel, index: index + 1, filters: mixer.filters)
                             }
                             emptySlot
                         }
@@ -132,25 +130,17 @@ struct AppConsoleStrip: View {
     @ObservedObject var channel: AppAudioChannel
     let index: Int
     var filters: ConsoleFilters? = nil
-    let reorder: (String, Bool) -> Bool
-    @ConsoleState private var dropTargeted = false
     @ConsoleState private var showingDetail = false
 
     var body: some View {
         VStack(spacing: ConsoleLayout.channelSpacing) {
             VStack(spacing: 3) {
                 HStack(spacing: 4) {
-                    Image(systemName: "line.3.horizontal").font(.system(size: 9, weight: .medium))
-                        .foregroundStyle(ConsolePalette.secondary)
                     Text(channel.app.name)
                         .font(.system(size: 10, weight: .semibold)).lineLimit(1)
                 }
                 .padding(.leading, 22)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
-                .draggable(ChannelDragItem(id: channel.id))
-                .accessibilityLabel("Move \(channel.app.name) channel")
-                .help("Drag to reorder \(channel.app.name)")
                 if let router = filters?.router(channelID: channel.id) {
                     FilterAssignmentControl(router: router)
                         .accessibilityLabel("\(channel.app.name) filter assignment")
@@ -205,16 +195,6 @@ struct AppConsoleStrip: View {
         .padding(.horizontal, 8).padding(.top, ConsoleLayout.stripTopInset).padding(.bottom, ConsoleLayout.stripBottomInset)
         .frame(width: ConsoleLayout.stripWidth, height: ConsoleLayout.stripHeight, alignment: .top)
         .background(ConsoleChannelPlate(channelNumber: index))
-        .overlay {
-            if dropTargeted {
-                RoundedRectangle(cornerRadius: 5).stroke(ConsolePalette.accent, lineWidth: 2)
-                    .padding(2).allowsHitTesting(false)
-            }
-        }
-        .dropDestination(for: ChannelDragItem.self) { items, location in
-            guard items.count == 1, let item = items.first else { return false }
-            return reorder(item.id, location.x > ConsoleLayout.stripWidth / 2)
-        } isTargeted: { dropTargeted = $0 }
         .sheet(isPresented: $showingDetail) { ChannelDetailView(channel: channel) }
     }
 

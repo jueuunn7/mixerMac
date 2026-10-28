@@ -11,9 +11,6 @@ struct ConsoleChannelPlate: View {
             let surface = CGRect(origin: .zero, size: size)
             if fillsSurface { context.fill(Path(surface), with: .color(Color(white: 0.76))) }
 
-            // One leading rail per strip: its neighbour supplies the next
-            // divider on the shared console surface. Do not outline
-            // both sides of each channel and create paired parallel borders.
             let scaleX = size.width / ConsoleLayout.stripWidth
             let ink = Color(white: 0.16)
 
@@ -21,30 +18,9 @@ struct ConsoleChannelPlate: View {
                 CGPoint(x: x * scaleX, y: y)
             }
 
-            func rail(_ vertices: [CGPoint]) -> Path {
-                Path { path in
-                    guard let first = vertices.first else { return }
-                    path.move(to: first)
-                    for vertex in vertices.dropFirst() {
-                        path.addLine(to: vertex)
-                    }
-                }
-            }
-
-            let segments: [[CGPoint]] = [
-                [point(0, master ? ConsoleLayout.stripTopInset : 25),
-                 point(0, master ? 105 : 103)],
-                [point(0, master ? ConsoleLayout.masterEQTop : ConsoleLayout.appEQTop),
-                 point(0, (master ? ConsoleLayout.masterEQTop : ConsoleLayout.appEQTop) + ConsoleLayout.eqBankHeight)],
-                [point(0, master ? ConsoleLayout.masterControlsTop : ConsoleLayout.appControlsTop),
-                 point(0, master ? ConsoleLayout.masterControlsBottom : ConsoleLayout.appControlsTop + ConsoleLayout.channelControlsHeight)],
-                [point(0, master ? ConsoleLayout.masterMeterTop : ConsoleLayout.appFaderTop),
-                 point(0, master ? ConsoleLayout.masterMeterBottom : ConsoleLayout.appFaderTop + ConsoleLayout.appFaderHeight)]
-            ]
-
-            var printing = Path()
-            for segment in segments {
-                printing.addPath(rail(segment))
+            let printing = Path { path in
+                path.move(to: point(0, 0))
+                path.addLine(to: point(0, size.height))
             }
             context.stroke(
                 printing,
