@@ -1,5 +1,6 @@
 @testable import MixerAudio
 import MixerCore
+import MixerStandardNodes
 import Testing
 import Foundation
 import SwiftUI
@@ -40,13 +41,10 @@ struct MasterDetailTests {
         #expect(restored.masterEQ.detailSettings.pan == 0.45)
         #expect(restored.masterEQ.detailSettings.trimDB == 0)
         #expect(restored.masterEQ.detailSettings.volume == 1)
-        let processor = AppChannelProcessor()
-        processor.apply(ChannelSettings(), audible: true, master: 1, sampleRate: 48_000, masterEQ: restored.masterEQ)
-        #expect(processor.masterEQ.bands[5].gain == 3.7)
-        #expect(processor.masterEQ.bands[5].frequency == 1234.5)
-        #expect(processor.masterEQ.bands[5].bandwidth == 0.35)
-        #expect(processor.masterEQ.globalGain == 0)
-        #expect(processor.eq.bands[5].gain == 0)
+        var neutralPan = restored.masterEQ
+        neutralPan.pan = 0
+        let peak = try renderedConsolePeak(master: neutralPan, frequency: 1234.5, frames: 48000, amplitude: 0.01)
+        #expect(abs(20 * log10(peak / 0.01) - 3.7) < 0.05)
         let response = try ChannelEQResponse().decibels(settings: restored.masterEQ.detailSettings,
             frequencies: [1234.5], sampleRate: 48_000)
         #expect(abs(response[0] - 3.7) < 0.001)

@@ -1,10 +1,8 @@
 import AppKit
 import Combine
 import CoreAudio
-import AudioToolbox
 import MixerCore
-import mixerMacDSP
-@preconcurrency import AVFAudio
+import MixerStandardNodes
 
 @MainActor
 public final class ChannelAudioMetrics: ObservableObject {
@@ -26,117 +24,17 @@ public final class ChannelAudioMetrics: ObservableObject {
 }
 
 @MainActor
-final class AppChannelProcessor {
-    private var engine: AVAudioEngine?
-    private var capture: SystemAudioCapture?
-    private var bridge: DriverAudioBridge?
-    let eq: AVAudioUnitEQ
-    let levelControl = AVAudioUnitEQ(numberOfBands: 0)
-    let masterEQ = AVAudioUnitEQ(numberOfBands: BusEQSettings.frequencies.count)
-    private var outputTapInstalled = false
-
-    init(numberOfBands: Int = 10) {
-        eq = AVAudioUnitEQ(numberOfBands: numberOfBands)
-        BusEQSettings.configure(masterEQ)
-        for index in eq.bands.indices {
-            let frequency = EQSettings.frequencies[index]
-            eq.bands[index].frequency = frequency
-            eq.bands[index].filterType = .parametric
-            eq.bands[index].bandwidth = 1
-            eq.bands[index].bypass = false
-        }
-    }
-
-    func start(app: AudioApp, output: OutputDevice, input: PCMFeed, postEQ: PCMFeed) throws {
-        stop()
-        let bridge = try DriverAudioBridge(inputFeed: input, rate: 48_000)
-        self.bridge = bridge
-        let capture = SystemAudioCapture(feed: input, processes: app.processes) { buffers, _ in
-            mixerMacFIFOWrite(bridge.fifo, buffers)
-        }
-        self.capture = capture
-        do {
-            // Capture remains unmuted until the replacement playback engine is ready.
-            try capture.start()
-            try startPlayback(bridge: bridge, sampleRate: capture.sampleRate, output: output, postEQ: postEQ)
-            try capture.setMutedWhenTapped(true)
-        } catch { stop(); throw error }
-    }
-
-    private func startPlayback(bridge: DriverAudioBridge, sampleRate: Double, output: OutputDevice, postEQ: PCMFeed) throws {
-            guard let format = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 2) else {
-                throw AudioDevices.RoutingError(operation: "Create app channel format", status: -1)
-            }
-            let source = AVAudioSourceNode(format: format) { _, _, count, buffers in
-                bridge.render(count, buffers: buffers)
-                return noErr
-            }
-            let engine = AVAudioEngine()
-            self.engine = engine
-            var deviceID = output.id
-            guard let unit = engine.outputNode.audioUnit else {
-                throw AudioDevices.RoutingError(operation: "Open app mixer output", status: -1)
-            }
-            try AudioDevices.check(AudioUnitSetProperty(unit, kAudioOutputUnitProperty_CurrentDevice,
-                kAudioUnitScope_Global, 0, &deviceID, UInt32(MemoryLayout<AudioObjectID>.size)), "Select mixer output")
-            engine.attach(source)
-            engine.attach(eq)
-            engine.attach(levelControl)
-            engine.attach(masterEQ)
-            engine.connect(source, to: eq, format: format)
-            engine.connect(eq, to: levelControl, format: format)
-            engine.connect(levelControl, to: masterEQ, format: format)
-            engine.connect(masterEQ, to: engine.mainMixerNode, format: format)
-            engine.mainMixerNode.outputVolume = 0
-            // Like the hardware channel meter, measure after trim/EQ and before
-            // the channel fader. Mute does not hide input levels.
-            eq.installTap(onBus: 0, bufferSize: 1024, format: nil) { buffer, _ in postEQ.push(buffer) }
-            outputTapInstalled = true
-            try engine.start()
-    }
-
-    func apply(_ settings: ChannelSettings, audible: Bool, master: Float, sampleRate _: Double, masterEQ settingsEQ: BusEQSettings = BusEQSettings()) {
-        settings.applyEQ(to: eq)
-        bridge?.setPan(settings.pan)
-        bridge?.setMasterPan(settingsEQ.pan)
-        bridge?.setMasterWidth(settingsEQ.width)
-        let gain = min(1, max(0, settings.volume)) * min(1, max(0, master))
-        levelControl.bypass = false
-        let decibels = 20 * log10(max(gain, 0.000_001))
-        levelControl.globalGain = max(-96, min(36, decibels))
-        settingsEQ.apply(to: masterEQ)
-        engine?.mainMixerNode.outputVolume = audible && gain > 0 ? 1 : 0
-    }
-
-    func updateProcesses(_ processes: [AudioObjectID]) throws { try capture?.setProcesses(processes) }
-
-    func stop() {
-        engine?.mainMixerNode.outputVolume = 0
-        // Destroying the muting tap always restores the app's native output.
-        capture?.stop()
-        capture = nil
-        engine?.stop()
-        if outputTapInstalled { eq.removeTap(onBus: 0) }
-        outputTapInstalled = false
-        if let engine {
-            for node in engine.attachedNodes where !(node is AVAudioIONode) && !(node is AVAudioMixerNode) { engine.detach(node) }
-        }
-        engine = nil
-        bridge = nil
-    }
-}
-
-@MainActor
 public final class AppAudioChannel: ObservableObject, Identifiable {
     public let id: String
     @Published public private(set) var app: AudioApp
-    public let core: Channel
+    public let core: ConsoleChannel
     public var settings: ChannelSettings {
         get { core.settings }
         set { core.updateSettings(newValue) }
     }
     private var coreSubscription: AnyCancellable?
     private let defaults: UserDefaults
+    public private(set) var restorationError: Error?
     public var isMuted: Bool {
         get { core.isMuted }
         set { core.setMuted(newValue) }
@@ -153,10 +51,12 @@ public final class AppAudioChannel: ObservableObject, Identifiable {
     private var passiveCapture: (any AudioCapturing)?
     private let makeCapture: @MainActor (PCMFeed, [AudioObjectID]?) -> any AudioCapturing
     private var needsProcessUpdate = false
-    let processor: AppChannelProcessor
+    public let sourceDefinition: ApplicationInput
+    private weak var activeSource: AudioSource?
     public private(set) var sampleRate: Double = 48_000
 
-    public init(app: AudioApp, defaults: UserDefaults = .standard,
+    public init(app: AudioApp, defaults: UserDefaults = .standard, core restoredCore: ConsoleChannel? = nil,
+         nodeRegistry: NodeRegistry? = nil,
          makeCapture: @escaping @MainActor (PCMFeed, [AudioObjectID]?) -> any AudioCapturing = {
              SystemAudioCapture(feed: $0, processes: $1)
          }) {
@@ -164,7 +64,6 @@ public final class AppAudioChannel: ObservableObject, Identifiable {
         self.makeCapture = makeCapture
         self.id = app.id
         self.app = app
-        processor = AppChannelProcessor()
         var settings: ChannelSettings
         if let data = defaults.data(forKey: "channel.\(app.id)"),
            let saved = try? JSONDecoder().decode(ChannelSettings.self, from: data), saved.gains.count == 10 {
@@ -172,8 +71,23 @@ public final class AppAudioChannel: ObservableObject, Identifiable {
         } else { settings = ChannelSettings() }
         settings.volume = min(1, max(0, settings.volume))
         settings.eqEnabled = true
-        core = Channel(id: app.id, settings: settings)
-        coreSubscription = core.changes.sink { [weak self] in
+        if let restoredCore { core = restoredCore }
+        else if let data = defaults.data(forKey: "channel.nodes.\(app.id)") {
+            do {
+                let registry = try nodeRegistry ?? StandardNodeRegistry.make()
+                let snapshot = try JSONDecoder().decode(NodeSnapshot.self, from: data)
+                guard let restored = try registry.makeNode(from: snapshot) as? ConsoleChannel, restored.id == app.id else {
+                    throw SnapshotError.incompatibleNode(app.id)
+                }
+                core = restored
+            } catch {
+                core = ConsoleChannel(id: app.id, settings: settings)
+                restorationError = error
+                message = "PROCESSOR RESTORE FAILED"
+            }
+        } else { core = ConsoleChannel(id: app.id, settings: settings) }
+        sourceDefinition = ApplicationInput(app: app, feed: input)
+        coreSubscription = core.changes.sink { [weak self] _ in
             self?.save()
             self?.objectWillChange.send()
         }
@@ -190,35 +104,43 @@ public final class AppAudioChannel: ObservableObject, Identifiable {
         } catch { message = "AUDIO ACCESS NEEDED" }
     }
 
-    public func process(output: OutputDevice) throws {
+    public var sourceBinding: AudioSourceBinding {
+        AudioSourceBinding(model: sourceDefinition, destination: PortAddress(nodeID: core.id, portID: "input"))
+    }
+
+    public func prepareForProcessing() {
         passiveCapture?.stop()
         passiveCapture = nil
-        try processor.start(app: app, output: output, input: input, postEQ: postEQ)
-        isProcessing = true
-        message = "LIVE"
+    }
+
+    public func setProcessingSource(_ source: AudioSource?) {
+        activeSource = source
+        isProcessing = source?.state == .running
+        if isProcessing { message = "LIVE" }
     }
 
     public func stopProcessing() {
-        processor.stop()
+        activeSource = nil
         isProcessing = false
         listen()
     }
 
     public func shutdown() {
-        processor.stop()
+        activeSource = nil
         passiveCapture?.stop()
         passiveCapture = nil
         isProcessing = false
     }
 
     public func update(app: AudioApp) {
+        sourceDefinition.update(app)
         let changed = self.app.processes != app.processes
         if changed || self.app.isPlaying != app.isPlaying || self.app.name != app.name { self.app = app }
         if changed { needsProcessUpdate = true }
         if needsProcessUpdate {
             do {
                 try passiveCapture?.setProcesses(app.processes)
-                try processor.updateProcesses(app.processes)
+                try activeSource?.synchronize()
                 needsProcessUpdate = false
                 if isProcessing { message = "LIVE" }
                 else if passiveCapture != nil { message = "LISTENING" }
@@ -235,11 +157,9 @@ public final class AppAudioChannel: ObservableObject, Identifiable {
     }
 
     private func save() {
+        guard restorationError == nil else { return }
+        if let data = try? JSONEncoder().encode(NodeSnapshot(core)) { defaults.set(data, forKey: "channel.nodes.\(id)") }
         if let data = try? JSONEncoder().encode(settings) { defaults.set(data, forKey: "channel.\(id)") }
-    }
-
-    public func apply(audible: Bool, masterEQ: BusEQSettings) {
-        processor.apply(settings, audible: audible, master: 1, sampleRate: sampleRate, masterEQ: masterEQ)
     }
 
     public func tick() {

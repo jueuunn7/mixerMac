@@ -1,6 +1,7 @@
 import Combine
 import Foundation
 import MixerCore
+import MixerStandardNodes
 @testable import MixerAudio
 import Testing
 @testable import mixerMac
@@ -28,8 +29,10 @@ struct MixerCoreIntegrationTests {
         try withMixer { model, first, second, defaults in
             #expect(model.core.channels[0] === first.core)
             first.settings.volume = 0.5
-            #expect(abs(first.processor.levelControl.globalGain - 20 * log10(Float(0.5))) < 0.0001)
-            #expect(second.processor.levelControl.globalGain == 0)
+            let measuredPeak1 = try renderedConsolePeak(settings: first.settings)
+            #expect(abs(measuredPeak1 - 0.05) < 0.001)
+            let measuredPeak2 = try renderedConsolePeak(settings: second.settings)
+            #expect(abs(measuredPeak2 - 0.1) < 0.001)
             let saved = try #require(defaults.data(forKey: "channel.first"))
             #expect(try JSONDecoder().decode(ChannelSettings.self, from: saved).volume == 0.5)
         }
@@ -44,7 +47,8 @@ struct MixerCoreIntegrationTests {
             detail.gains[5] = -4.1
             first.settings = detail
             #expect(knob.wrappedValue == -4.1)
-            #expect(first.processor.eq.bands[5].gain == -4.1)
+            let measuredPeak3 = try renderedConsolePeak(settings: first.settings)
+            #expect(abs(20 * log10(measuredPeak3 / 0.1) + 4.1) < 0.2)
             let saved = try #require(defaults.data(forKey: "channel.first"))
             #expect(try JSONDecoder().decode(ChannelSettings.self, from: saved).gains[5] == -4.1)
         }
@@ -54,8 +58,10 @@ struct MixerCoreIntegrationTests {
         try withMixer { model, first, second, defaults in
             model.core.master.equalizer.gain.setValue(-7.5)
             model.core.master.width.setValue(1.35)
-            #expect(first.processor.masterEQ.globalGain == -7.5)
-            #expect(second.processor.masterEQ.globalGain == -7.5)
+            let measuredPeak4 = try renderedConsolePeak(settings: first.settings, master: model.masterEQ)
+            #expect(abs(20 * log10(measuredPeak4 / 0.1) + 7.5) < 0.05)
+            let measuredPeak5 = try renderedConsolePeak(settings: second.settings, master: model.masterEQ)
+            #expect(abs(20 * log10(measuredPeak5 / 0.1) + 7.5) < 0.05)
             let reopened = MixerConsoleModel(preferences: ConsolePreferences(defaults: defaults))
             #expect(reopened.core.master.equalizer.gain.value == -7.5)
             #expect(reopened.core.master.width.value == 1.35)
@@ -74,8 +80,8 @@ struct MixerCoreIntegrationTests {
             settings.bandwidths[3] = 0.5
             first.settings = settings
             #expect(observed == [settings])
-            #expect(first.processor.eq.bands[3].frequency == 275)
-            #expect(first.processor.eq.bands[3].gain == -2.4)
+            let measuredPeak6 = try renderedConsolePeak(settings: first.settings, frequency: 275, frames: 48000)
+            #expect(abs(20 * log10(measuredPeak6 / 0.1) + 2.4) < 0.05)
             withExtendedLifetime(subscription) {}
         }
     }

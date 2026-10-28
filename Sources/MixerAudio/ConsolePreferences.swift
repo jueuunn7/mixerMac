@@ -1,8 +1,8 @@
 import Foundation
 
-struct ConsolePreferences {
+public struct ConsolePreferences {
     /// Copy known settings once, preserving any values already saved by mixerMac.
-    static func migrateLegacySettings(defaults: UserDefaults = .standard,
+    public static func migrateLegacySettings(defaults: UserDefaults = .standard,
                                       legacyDomain: String = "local.mixroom.app") {
         let marker = "settings.migratedLegacyDomain"
         guard !defaults.bool(forKey: marker) else { return }
@@ -14,13 +14,13 @@ struct ConsolePreferences {
         defaults.set(true, forKey: marker)
     }
 
-    let defaults: UserDefaults
-    init(defaults: UserDefaults = .standard) { self.defaults = defaults }
+    public let defaults: UserDefaults
+    public init(defaults: UserDefaults = .standard) { self.defaults = defaults }
 
-    var outputUID: String? { defaults.string(forKey: "output.uid") }
-    var mixerWasRunning: Bool { defaults.bool(forKey: "mixer.running") }
-    func saveOutputUID(_ uid: String) { defaults.set(uid, forKey: "output.uid") }
-    func saveMixerRunning(_ running: Bool) { defaults.set(running, forKey: "mixer.running") }
+    public var outputUID: String? { defaults.string(forKey: "output.uid") }
+    public var mixerWasRunning: Bool { defaults.bool(forKey: "mixer.running") }
+    public func saveOutputUID(_ uid: String) { defaults.set(uid, forKey: "output.uid") }
+    public func saveMixerRunning(_ running: Bool) { defaults.set(running, forKey: "mixer.running") }
 }
 
 /// Keeps the user's intent independent of engine teardown and startup failures.

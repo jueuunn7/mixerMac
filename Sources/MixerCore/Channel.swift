@@ -1,67 +1,23 @@
-import Combine
-
 @MainActor
-public final class Channel: Identifiable {
-    public let id: String
-    public let equalizer: Equalizer
-    public let volume: Parameter
-    public let pan: Parameter
-    public private(set) var isMuted: Bool
-    public private(set) var isSolo: Bool
-    private let changed = PassthroughSubject<Void, Never>()
-    public var changes: AnyPublisher<Void, Never> { changed.eraseToAnyPublisher() }
-    private var subscription: AnyCancellable?
-    private var updating = false
+open class Channel: ProcessingChain {
+    public let mute: Parameter
+    public let solo: Parameter
+    public final var isMuted: Bool { mute.value == 1 }
+    public final var isSolo: Bool { solo.value == 1 }
 
-    public init(id: String, settings: ChannelSettings = ChannelSettings()) {
-        self.id = id
-        equalizer = Equalizer(settings: settings.eqSettings)
-        volume = Parameter(value: settings.volume, range: 0...1, defaultValue: 1, unit: .linearGain)
-        pan = Parameter(value: settings.pan, range: -1...1, defaultValue: 0, unit: .balance)
-        isMuted = settings.isMuted
-        isSolo = settings.isSolo
-        subscription = Publishers.MergeMany([equalizer.changes, volume.changes, pan.changes]).sink { [weak self] in
-            guard let self, !self.updating else { return }
-            self.changed.send()
-        }
+    public init(id: String, typeID: String = "core.channel", nodes: [MixerNode] = [],
+                isMuted: Bool = false, isSolo: Bool = false) {
+        mute = Parameter(value: isMuted ? 1 : 0, range: 0...1, defaultValue: 0, unit: .boolean, step: 1)
+        solo = Parameter(value: isSolo ? 1 : 0, range: 0...1, defaultValue: 0, unit: .boolean, step: 1)
+        super.init(id: id, typeID: typeID, nodes: nodes, parameters: ["mute": mute, "solo": solo])
     }
 
-    public var settings: ChannelSettings {
-        let eq = equalizer.settings
-        var settings = ChannelSettings()
-        settings.gains = eq.gains
-        settings.frequencies = eq.frequencies
-        settings.bandwidths = eq.bandwidths
-        settings.trimDB = eq.gainDB
-        settings.eqEnabled = eq.enabled
-        settings.volume = volume.value
-        settings.pan = pan.value
-        settings.isMuted = isMuted
-        settings.isSolo = isSolo
-        return settings
+    public static func audibleIDs(in channels: [Channel], activeIDs: Set<String>? = nil) -> Set<String> {
+        let active = channels.filter { activeIDs?.contains($0.id) ?? true }
+        let anySolo = active.contains { $0.isSolo }
+        return Set(active.filter { !$0.isMuted && (!anySolo || $0.isSolo) }.map(\.id))
     }
 
-    public func updateSettings(_ settings: ChannelSettings) {
-        let previous = self.settings
-        updating = true
-        equalizer.updateSettings(settings.eqSettings)
-        volume.setValue(settings.volume)
-        pan.setValue(settings.pan)
-        isMuted = settings.isMuted
-        isSolo = settings.isSolo
-        updating = false
-        if self.settings != previous { changed.send() }
-    }
-
-    public func setMuted(_ muted: Bool) {
-        guard isMuted != muted else { return }
-        isMuted = muted
-        changed.send()
-    }
-
-    public func setSolo(_ solo: Bool) {
-        guard isSolo != solo else { return }
-        isSolo = solo
-        changed.send()
-    }
+    public final func setMuted(_ muted: Bool) { mute.setValue(muted ? 1 : 0) }
+    public final func setSolo(_ solo: Bool) { self.solo.setValue(solo ? 1 : 0) }
 }

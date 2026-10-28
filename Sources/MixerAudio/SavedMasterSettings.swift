@@ -1,5 +1,6 @@
 import Foundation
 import MixerCore
+import MixerStandardNodes
 
 extension BusEQSettings {
     static func restored(defaults: UserDefaults = .standard) -> BusEQSettings {

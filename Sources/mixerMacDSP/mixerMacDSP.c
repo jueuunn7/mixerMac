@@ -260,3 +260,46 @@ void mixerMacAnalysisReset(mixerMacAnalysis *analysis) {
     analysis->sequence++;
     atomic_flag_clear_explicit(&analysis->busy, memory_order_release);
 }
+
+struct mixerMacStereo {
+    atomic_bool bypassed;
+    _Atomic(float) pan, width;
+    float renderedPan, renderedWidth;
+};
+
+mixerMacStereo *mixerMacStereoCreate(void) {
+    mixerMacStereo *state = calloc(1, sizeof(mixerMacStereo));
+    if (!state) return NULL;
+    atomic_init(&state->bypassed, false);
+    atomic_init(&state->pan, 0);
+    atomic_init(&state->width, 1);
+    state->renderedWidth = 1;
+    return state;
+}
+void mixerMacStereoDestroy(mixerMacStereo *state) { free(state); }
+void mixerMacStereoSetBypassed(mixerMacStereo *state, int bypassed) {
+    atomic_store_explicit(&state->bypassed, bypassed != 0, memory_order_relaxed);
+}
+void mixerMacStereoSet(mixerMacStereo *state, float pan, float width) {
+    atomic_store_explicit(&state->pan, isfinite(pan) ? fmaxf(-1, fminf(1, pan)) : 0, memory_order_relaxed);
+    atomic_store_explicit(&state->width, isfinite(width) ? fmaxf(0, fminf(2, width)) : 1, memory_order_relaxed);
+}
+void mixerMacStereoProcess(mixerMacStereo *state, uint32_t frames, AudioBufferList *buffers) {
+    if (atomic_load_explicit(&state->bypassed, memory_order_relaxed) || buffers->mNumberBuffers != 2) return;
+    AudioBuffer *leftBuffer = &buffers->mBuffers[0], *rightBuffer = &buffers->mBuffers[1];
+    if (!leftBuffer->mData || !rightBuffer->mData || leftBuffer->mNumberChannels != 1 || rightBuffer->mNumberChannels != 1) return;
+    uint32_t available = leftBuffer->mDataByteSize / sizeof(float);
+    if (rightBuffer->mDataByteSize / sizeof(float) < available) available = rightBuffer->mDataByteSize / sizeof(float);
+    if (frames > available) frames = available;
+    float *left = leftBuffer->mData, *right = rightBuffer->mData;
+    const float pan = atomic_load_explicit(&state->pan, memory_order_relaxed);
+    const float width = atomic_load_explicit(&state->width, memory_order_relaxed);
+    for (uint32_t i = 0; i < frames; ++i) {
+        state->renderedPan += fmaxf(-1.0f / 240, fminf(1.0f / 240, pan - state->renderedPan));
+        state->renderedWidth += fmaxf(-1.0f / 240, fminf(1.0f / 240, width - state->renderedWidth));
+        float mid = (left[i] + right[i]) * 0.5f;
+        float side = (left[i] - right[i]) * (0.5f * state->renderedWidth);
+        left[i] = (mid + side) * fminf(1, 1 - state->renderedPan);
+        right[i] = (mid - side) * fminf(1, 1 + state->renderedPan);
+    }
+}

@@ -1,4 +1,5 @@
 import MixerCore
+import MixerStandardNodes
 import SwiftUI
 
 private typealias FaderState<Value> = SwiftUI.State<Value>
