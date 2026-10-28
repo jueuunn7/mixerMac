@@ -1,3 +1,5 @@
+@testable import MixerAudio
+import MixerCore
 import Testing
 import Foundation
 @preconcurrency import AVFAudio
@@ -30,7 +32,7 @@ struct MasterEQDSPTests {
         let processor = AppChannelProcessor()
         var master = BusEQSettings()
         master.gainDB = gainDB
-        processor.apply(AppChannelSettings(), audible: true, master: 1, sampleRate: 48_000, masterEQ: master)
+        processor.apply(ChannelSettings(), audible: true, master: 1, sampleRate: 48_000, masterEQ: master)
         let format = try #require(AVAudioFormat(standardFormatWithSampleRate: 48_000, channels: 2))
         let source = try #require(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 4096))
         source.frameLength = 4096
@@ -59,7 +61,7 @@ struct MasterEQDSPTests {
     }
 
     @Test @MainActor func masterBandsMatchAppEQ() {
-        #expect(BusEQSettings.frequencies == AppAudioChannel.frequencies)
+        #expect(BusEQSettings.frequencies == EQSettings.frequencies)
         #expect(BusEQSettings.labels == ["31.5", "63", "125", "250", "500", "1k", "2k", "4k", "8k", "16k"])
         let eq = AVAudioUnitEQ(numberOfBands: BusEQSettings.frequencies.count)
         BusEQSettings.configure(eq)

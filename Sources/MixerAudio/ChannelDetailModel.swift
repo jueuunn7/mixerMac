@@ -1,3 +1,5 @@
+import MixerCore
+import Combine
 import Foundation
 import AudioToolbox
 @preconcurrency import AVFAudio
@@ -10,7 +12,7 @@ final class ChannelEQResponse {
     private let eq = AVAudioUnitEQ(numberOfBands: 10)
     private var rate: Double = 0
 
-    func decibels(settings: AppChannelSettings, frequencies: [Double], sampleRate: Double) throws -> [Double] {
+    func decibels(settings: ChannelSettings, frequencies: [Double], sampleRate: Double) throws -> [Double] {
         if rate != sampleRate {
             AudioUnitUninitialize(eq.audioUnit)
             var newRate = sampleRate
@@ -38,27 +40,28 @@ final class ChannelEQResponse {
 }
 
 @MainActor
-final class ChannelDetailModel: ObservableObject {
-    @Published private(set) var response: [Double] = []
-    @Published private(set) var bandResponse: [Double] = []
-    @Published private(set) var spectrum = [Float](repeating: -90, count: SpectrumAnalyzer.pointCount)
-    @Published private(set) var history = [Double](repeating: -90, count: 100)
-    @Published private(set) var peakDB: Double = -90
-    @Published private(set) var sampleRate: Double = 48_000
-    @Published private(set) var receivingAudio = false
-    @Published private(set) var responseError: String?
+public final class ChannelDetailModel: ObservableObject {
+    public init() {}
+    @Published public private(set) var response: [Double] = []
+    @Published public private(set) var bandResponse: [Double] = []
+    @Published public private(set) var spectrum = [Float](repeating: -90, count: SpectrumAnalyzer.pointCount)
+    @Published public private(set) var history = [Double](repeating: -90, count: 100)
+    @Published public private(set) var peakDB: Double = -90
+    @Published public private(set) var sampleRate: Double = 48_000
+    @Published public private(set) var receivingAudio = false
+    @Published public private(set) var responseError: String?
     private let responseReader = ChannelEQResponse()
     private let analyzer = SpectrumAnalyzer()
     private var spectrumSmoother = SpectrumDisplaySmoother()
     private var sequence: UInt64?
     private var wasProcessing: Bool?
-    private var lastSettings: AppChannelSettings?
+    private var lastSettings: ChannelSettings?
     private var responseRate: Double = 0
 
-    var upperFrequency: Double { min(20_000, sampleRate * 0.49) }
-    var frequencyPoints: [Double] { (0..<256).map { 20 * pow(upperFrequency / 20, Double($0) / 255) } }
+    public var upperFrequency: Double { min(20_000, sampleRate * 0.49) }
+    public var frequencyPoints: [Double] { (0..<256).map { 20 * pow(upperFrequency / 20, Double($0) / 255) } }
 
-    func refreshResponse(settings: AppChannelSettings) {
+    public func refreshResponse(settings: ChannelSettings) {
         guard lastSettings != settings || responseRate != sampleRate else { return }
         do {
             let points = frequencyPoints + settings.frequencies.map(Double.init)
@@ -75,7 +78,7 @@ final class ChannelDetailModel: ObservableObject {
         }
     }
 
-    func tick(settings: AppChannelSettings, feed: PCMFeed, isProcessing: Bool) {
+    public func tick(settings: ChannelSettings, feed: PCMFeed, isProcessing: Bool) {
         if wasProcessing != isProcessing {
             sequence = nil
             wasProcessing = isProcessing

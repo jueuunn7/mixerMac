@@ -1,10 +1,11 @@
+@testable import MixerAudio
 import CoreAudio
 import Foundation
 import Testing
 @testable import mixerMac
 
 @MainActor
-private final class TestAudioCapture: AudioCapturing {
+final class TestAudioCapture: AudioCapturing {
     enum Failure: Error { case unavailable }
     var startFails = false
     var processFailures = 0

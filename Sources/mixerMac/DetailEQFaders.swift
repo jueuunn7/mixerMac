@@ -1,23 +1,16 @@
+import MixerCore
 import SwiftUI
 
 private typealias FaderState<Value> = SwiftUI.State<Value>
 
 /// One setting path for graph dragging, numeric entry, and the graphic faders.
-func setDetailGain(_ gain: Float, band: Int, settings: Binding<AppChannelSettings>) {
+func setDetailGain(_ gain: Float, band: Int, settings: Binding<ChannelSettings>) {
     guard gain.isFinite else { return }
     settings.wrappedValue.gains[band] = min(24, max(-24, (gain * 10).rounded() / 10))
 }
 
-enum EQFaderScale {
-    static func position(for gain: Float) -> Float { (min(24, max(-24, gain)) + 24) / 48 }
-    static func gain(at position: Float) -> Float {
-        let gain = min(1, max(0, position)) * 48 - 24
-        return abs(gain) < 0.25 ? 0 : (gain * 10).rounded() / 10
-    }
-}
-
 struct DetailFaderBank: View {
-    @Binding var settings: AppChannelSettings
+    @Binding var settings: ChannelSettings
     @Binding var selectedBand: Int
     var body: some View {
         HStack(spacing: 8) {

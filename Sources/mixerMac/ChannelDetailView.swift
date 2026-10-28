@@ -1,15 +1,15 @@
+import MixerAudio
+import MixerCore
 import SwiftUI
 
 private typealias DetailState<Value> = SwiftUI.State<Value>
 
 struct ChannelDetailView: View {
     @ObservedObject var channel: AppAudioChannel
-    let mixer: MixerConsoleModel
     var body: some View {
         EQDetailView(title: channel.app.name, settings: $channel.settings,
             isMaster: false, isProcessing: channel.isProcessing,
-            feed: channel.isProcessing ? channel.postEQ : channel.input,
-            apply: { mixer.apply() })
+            feed: channel.isProcessing ? channel.postEQ : channel.input)
     }
 }
 
@@ -20,17 +20,16 @@ struct MasterDetailView: View {
             get: { mixer.masterEQ.detailSettings },
             set: { mixer.masterEQ.detailSettings = $0 }),
             isMaster: true, isProcessing: mixer.isMixing, feed: mixer.masterFeed,
-            apply: { mixer.apply() }, width: $mixer.masterEQ.width)
+            width: mixer.core.master.width.binding)
     }
 }
 
 private struct EQDetailView: View {
     let title: String
-    @Binding var settings: AppChannelSettings
+    @Binding var settings: ChannelSettings
     let isMaster: Bool
     let isProcessing: Bool
     let feed: PCMFeed
-    let apply: () -> Void
     var width: Binding<Float>? = nil
     @Environment(\.dismiss) private var dismiss
     @StateObject private var detail = ChannelDetailModel()
@@ -79,7 +78,7 @@ private struct EQDetailView: View {
                 }.pickerStyle(.segmented).labelsHidden().frame(width: 160)
                 Button("Reset EQ") {
                     settings.gains = Array(repeating: 0, count: 10)
-                    settings.frequencies = AppAudioChannel.frequencies
+                    settings.frequencies = EQSettings.frequencies
                     settings.bandwidths = Array(repeating: 1, count: 10)
                 }.controlSize(.small)
             }
@@ -104,7 +103,6 @@ private struct EQDetailView: View {
         .onAppear { detail.tick(settings: settings, feed: feed, isProcessing: isProcessing) }
         .onReceive(Timer.publish(every: 0.15, on: .main, in: .common).autoconnect()) { _ in detail.tick(settings: settings, feed: feed, isProcessing: isProcessing) }
         .onChange(of: settings) { _, _ in
-            apply()
             detail.refreshResponse(settings: settings)
         }
     }
@@ -115,7 +113,7 @@ private struct EQDetailView: View {
 }
 
 private struct DetailBandTable: View {
-    @Binding var settings: AppChannelSettings
+    @Binding var settings: ChannelSettings
     @Binding var selectedBand: Int
     let upperFrequency: Double
 
@@ -190,7 +188,7 @@ struct DetailNumberField: View {
 }
 
 private struct DetailResponsePlot: View {
-    @Binding var settings: AppChannelSettings
+    @Binding var settings: ChannelSettings
     @ObservedObject var detail: ChannelDetailModel
     @Binding var selectedBand: Int
     @DetailState private var dragStart: (frequency: Float, gain: Float)?

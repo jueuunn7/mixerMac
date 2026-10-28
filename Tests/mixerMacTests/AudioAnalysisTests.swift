@@ -1,3 +1,5 @@
+@testable import MixerAudio
+import MixerCore
 import Testing
 import Foundation
 @preconcurrency import AVFAudio
@@ -139,10 +141,10 @@ struct AudioAnalysisTests {
     @Test @MainActor func appEQChannelsDoNotAffectEachOther() throws {
         let first = AppChannelProcessor()
         let second = AppChannelProcessor()
-        var cut = AppChannelSettings()
+        var cut = ChannelSettings()
         cut.gains[5] = -12 // Only app A cuts 1 kHz.
         first.apply(cut, audible: true, master: 1, sampleRate: 48_000)
-        second.apply(AppChannelSettings(), audible: true, master: 1, sampleRate: 48_000)
+        second.apply(ChannelSettings(), audible: true, master: 1, sampleRate: 48_000)
 
         func render(_ eq: AVAudioUnitEQ) throws -> Float {
             // An integer number of cycles avoids an artificial click at loop boundaries.
@@ -173,7 +175,7 @@ struct AudioAnalysisTests {
     @Test(arguments: [false, true]) @MainActor
     func faderAttenuationTrimAndEQRemainIndependent(eqEnabled: Bool) throws {
         let processor = AppChannelProcessor()
-        var settings = AppChannelSettings()
+        var settings = ChannelSettings()
         settings.eqEnabled = eqEnabled
         settings.gains[5] = 6
         settings.trimDB = 3
@@ -204,7 +206,7 @@ struct AudioAnalysisTests {
 
     @Test func savedChannelsFromBeforeTrimKeepTheirSettings() throws {
         let oldSettings = Data(#"{"gains":[0,0,0,0,0,6,0,0,0,0],"volume":0.5,"eqEnabled":false}"#.utf8)
-        let settings = try JSONDecoder().decode(AppChannelSettings.self, from: oldSettings)
+        let settings = try JSONDecoder().decode(ChannelSettings.self, from: oldSettings)
         #expect(settings.trimDB == 0)
         #expect(settings.gains[5] == 6)
         #expect(settings.volume == 0.5)
@@ -214,7 +216,7 @@ struct AudioAnalysisTests {
     @Test(arguments: [0, 10]) @MainActor
     func channelEQOutputRetainsInputLevelWithFaderDown(bands: Int) throws {
         let processor = AppChannelProcessor(numberOfBands: bands)
-        var settings = AppChannelSettings()
+        var settings = ChannelSettings()
         if bands == 0 { settings.gains = [Float](repeating: 12, count: 10) }
         settings.trimDB = 6
         settings.volume = 0.01
@@ -253,8 +255,8 @@ struct AudioAnalysisTests {
         var master = BusEQSettings()
         master.enabled = enabled
         master.gains[band] = 6
-        processor.apply(AppChannelSettings(), audible: true, master: 1, sampleRate: 48_000, masterEQ: master)
-        secondProcessor.apply(AppChannelSettings(), audible: true, master: 1, sampleRate: 48_000, masterEQ: master)
+        processor.apply(ChannelSettings(), audible: true, master: 1, sampleRate: 48_000, masterEQ: master)
+        secondProcessor.apply(ChannelSettings(), audible: true, master: 1, sampleRate: 48_000, masterEQ: master)
 
         func render(_ processor: AppChannelProcessor, throughMaster: Bool) throws -> Float {
             // More cycles resolve the lowest bands. Whole cycles keep the loop seamless.
