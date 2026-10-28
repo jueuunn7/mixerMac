@@ -41,18 +41,25 @@ struct ConsoleFilterStrip: View {
 private struct ConsoleFilterBankControls: View {
     let bank: ConsoleFilterBank
     let number: Int
+    @State private var bypassed = true
+    @State private var selectedMode = 0
 
     var body: some View {
         VStack(spacing: 24) {
             HStack(spacing: 4) {
                 Text("FILTER \(number)").font(.system(size: 9, weight: .bold)).tracking(0.6)
                 Spacer()
-                ConsoleButton(title: "ON", active: !bank.isBypassed, color: ConsolePalette.blue) { bank.setBypassed(!bank.isBypassed) }
+                ConsoleButton(title: "ON", active: !bypassed, color: ConsolePalette.blue) {
+                    let next = !bypassed
+                    bypassed = next
+                    bank.setBypassed(next)
+                }
                     .frame(width: 44).accessibilityLabel("Filter \(number) enabled")
             }
             HStack(spacing: 3) {
                 ForEach(Array(["LPF", "BPF", "HPF"].enumerated()), id: \.offset) { index, title in
-                    ConsoleButton(title: title, active: Int(bank.filter.mode.value) == index, color: ConsolePalette.blue, stacked: true) {
+                    ConsoleButton(title: title, active: selectedMode == index, color: ConsolePalette.blue, stacked: true) {
+                        selectedMode = index
                         bank.filter.mode.setValue(Float(index))
                     }.accessibilityLabel("Filter \(number) \(title)")
                 }
@@ -63,6 +70,13 @@ private struct ConsoleFilterBankControls: View {
                 ConsoleFilterKnob(parameter: bank.crunch.amount, title: "CRUNCH", accessibilityName: "Filter \(number) crunch", scale: 100, suffix: "%")
             }
         }
+        .onAppear(perform: syncFromModel)
+        .onReceive(bank.changes) { _ in syncFromModel() }
+    }
+
+    private func syncFromModel() {
+        bypassed = bank.isBypassed
+        selectedMode = Int(bank.filter.mode.value)
     }
 }
 
@@ -138,7 +152,9 @@ struct FilterAssignmentControl: View {
         }
         .frame(width: 66, height: 40)
         .contentShape(Rectangle())
-        .highPriorityGesture(DragGesture(minimumDistance: 4)
+        // Keep the three assignment buttons tappable while still allowing the
+        // whole control to be swept vertically like the original selector.
+        .simultaneousGesture(DragGesture(minimumDistance: 4)
             .onChanged { event in
                 if dragOrigin == nil { dragOrigin = selection == 1 ? 0 : selection == 2 ? 2 : 1 }
                 let steps = Int((-event.translation.height / 12).rounded())
